@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd">
+  
+  <Folders/>
+  
+  <Courses>
+    <Course>
+      <Name>00 Paradise Loo</Name>
+      <Lap>
+        <TotalTimeSeconds>5099.0000000</TotalTimeSeconds>
+        <DistanceMeters>31898.8750000</DistanceMeters>
+        <BeginPosition>
+          <LatitudeDegrees>0.0000000</LatitudeDegrees>
+          <LongitudeDegrees>0.0000000</LongitudeDegrees>
+        </BeginPosition>
+        <EndPosition>
+          <LatitudeDegrees>0.0186490</LatitudeDegrees>
+          <LongitudeDegrees>0.0186669</LongitudeDegrees>
+        </EndPosition>
+        <Intensity>Active</Intensity>
+        <Cadence>0</Cadence>
+      </Lap>
+    </Course>
+    <Course>
+      <Name>Biking Course</Name>
+      <Lap>
+        <TotalTimeSeconds>358.6900000</TotalTimeSeconds>
+        <DistanceMeters>1562.9962158</DistanceMeters>
+        <BeginPosition>
+          <LatitudeDegrees>33.3294352</LatitudeDegrees>
+          <LongitudeDegrees>-111.9460311</LongitudeDegrees>
+        </BeginPosition>
+        <EndPosition>
+          <LatitudeDegrees>33.3480844</LatitudeDegrees>
+          <LongitudeDegrees>-111.9273698</LongitudeDegrees>
+        </EndPosition>
+        <AverageHeartRateBpm xsi:type="HeartRateInBeatsPerMinute_t">
+          <Value>101</Value>
+        </AverageHeartRateBpm>
+        <MaximumHeartRateBpm xsi:type="HeartRateInBeatsPerMinute_t">
+          <Value>121</Value>
+        </MaximumHeartRateBpm>
+        <Intensity>Active</Intensity>
+      </Lap>
+    </Course>
+    <Course>
+      <Name>GPsies</Name>
+      <Lap>
+        <TotalTimeSeconds>251808.0000000</TotalTimeSeconds>
+        <DistanceMeters>699468.3750000</DistanceMeters>
+        <BeginPosition>
+          <LatitudeDegrees>45.9969616</LatitudeDegrees>
+          <LongitudeDegrees>-122.8051750</LongitudeDegrees>
+        </BeginPosition>
+        <EndPosition>
+          <LatitudeDegrees>46.0156292</LatitudeDegrees>
+          <LongitudeDegrees>-122.7865076</LongitudeDegrees>
+        </EndPosition>
+        <Intensity>Active</Intensity>
+      </Lap>
+    </Course>
+    <Course>
+      <Name>Hike</Name>
+      <Lap>
+        <TotalTimeSeconds>4022.2400000</TotalTimeSeconds>
+        <DistanceMeters>8802.0097656</DistanceMeters>
+        <BeginPosition>
+          <LatitudeDegrees>33.3402005</LatitudeDegrees>
+          <LongitudeDegrees>-111.9970301</LongitudeDegrees>
+        </BeginPosition>
+        <EndPosition>
+          <LatitudeDegrees>33.3588481</LatitudeDegrees>
+          <LongitudeDegrees>-111.9783640</LongitudeDegrees>
+        </EndPosition>
+        <Intensity>Active</Intensity>
+      </Lap>
+    </Course>
+  </Courses>
+  
+  <Author xsi:type="Application_t">
+    <Name>Garmin Communicator Plug-In</Name>
+    <Build>
+      <Version>
+        <VersionMajor>2</VersionMajor>
+        <VersionMinor>2</VersionMinor>
+        <BuildMajor>0</BuildMajor>
+        <BuildMinor>2</BuildMinor>
+      </Version>
+      <Type>Beta</Type>
+      <Time>Aug 29 2007, 09:42:31</Time>
+      <Builder>wissenba</Builder>
+    </Build>
+    <LangID>EN</LangID>
+    <PartNumber>006-A0161-00</PartNumber>
+  </Author>
+  
+</TrainingCenterDatabase>

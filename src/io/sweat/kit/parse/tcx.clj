@@ -1,0 +1,74 @@
+(ns io.sweat.kit.parse.tcx
+  (:require [clojure.xml :as xml]
+            [clojure.zip :as zip]
+            [clojure.data.zip.xml :as zip-xml :refer [xml-> xml1-> attr]]
+            [clojure.java.io :as io]
+            [clj-time.format :as time]))
+
+;;;;;;;; Helper fns ;;;;;;;;
+
+(defn- tcx-zip [tcx]
+  (-> tcx io/file xml/parse zip/xml-zip))
+
+(defn- parse-double [txt] (Double/parseDouble txt))
+
+(defn- parse-int [txt] (Integer/parseInt txt))
+
+(defn- xml1->text [loc & preds] 
+  (some-> (apply xml1-> loc preds) zip-xml/text))
+
+(defn- xml1->double [loc & preds]
+  (some-> (apply xml1->text loc preds) parse-double))
+
+(defn- xml1->int [loc & preds]
+  (some-> (apply xml1->text loc preds) parse-int))
+
+(defn- xml1->inst [loc & preds]
+  (some-> (apply xml1->text loc preds) time/parse))
+
+;;;;;;;; Main fns ;;;;;;;;
+
+(defmulti parse-loc #(-> % zip/node :tag))
+
+(defmethod parse-loc :default [loc])
+
+(defmethod parse-loc :Activity [act]
+  {:dtstart (xml1->inst act :Id)
+   :name (xml1->text act :Notes)
+   :sport (attr act :Sport) ;; TODO enum
+   :laps (for [lap (xml-> act :Lap)]
+           (parse-loc lap))
+   :notes (xml1->text act :Notes)})
+
+(defmethod parse-loc :Lap [lap]
+  {:dtstart (time/parse (attr lap :StartTime))
+   :duration (xml1->double lap :TotalTimeSeconds)
+   :distance (xml1->double lap :DistanceMeters)
+   :max-speed (xml1->double lap :MaximumSpeed)
+   :calories (xml1->int lap :Calories)
+   :avg-hr (xml1->int lap :AverageHeartRateBpm :Value)
+   :max-hr (xml1->int lap :MaximumHeartRateBpm :Value)
+   :intensity (xml1->text lap :Intensity)
+   :cadence (xml1->int lap :Cadence)
+   :trigger (xml1->text lap :TriggerMethod) ;;; TODO enum
+   :notes (xml1->text lap :Notes)
+   :track (for [tpnt (xml-> lap :Track :Trackpoint)]
+            (parse-loc tpnt))})
+
+(defmethod parse-loc :Trackpoint [tpnt]
+  {:instant (xml1->inst tpnt :Time)
+   :position {:lat (xml1->double tpnt :Position :LatitudeDegrees)
+              :lng (xml1->double tpnt :Position :LongitudeDegrees)}
+   :altitude (xml1->double tpnt :AltitudeMeters)
+   :distance (xml1->double tpnt :DistanceMeters)
+   :hr (xml1->int tpnt :HeartRateBpm :Value)
+   :cadence (xml1->int tpnt :Cadence)})
+
+(defn parse [tcx]
+  (let [z (tcx-zip tcx)]
+    {:activities (for [act (xml-> z :Activities :Activity)] 
+                   (parse-loc act))}))                                        
+(comment 
+  (def r (io/resource "FitnessHistoryDetail.tcx"))
+  (time (let [p (parse (.getPath r))] nil))
+  (clojure.pprint/pprint p))

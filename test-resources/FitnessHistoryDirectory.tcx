@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd">
+  
+  <Activities>
+    <Activity Sport="Running">
+      <Id>2007-08-18T21:45:45Z</Id>
+      <Lap StartTime="2007-08-18T21:45:45Z">
+        <TotalTimeSeconds>6343.4000000</TotalTimeSeconds>
+        <DistanceMeters>22297.0312500</DistanceMeters>
+        <Calories>1098</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Training VirtualPartner="true">
+        <Plan IntervalWorkout="false" Type="Course">
+          <Name>00 Paradise Loo</Name>
+        </Plan>
+      </Training>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-08-07T02:42:41Z</Id>
+      <Lap StartTime="2007-08-07T02:42:41Z">
+        <TotalTimeSeconds>2325.0200000</TotalTimeSeconds>
+        <DistanceMeters>8348.5039063</DistanceMeters>
+        <Calories>285</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-07-26T03:16:42Z</Id>
+      <Lap StartTime="2007-07-26T03:16:42Z">
+        <TotalTimeSeconds>1945.2700000</TotalTimeSeconds>
+        <DistanceMeters>2052.4462891</DistanceMeters>
+        <Calories>98</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-07-19T02:13:40Z</Id>
+      <Lap StartTime="2007-07-19T02:13:40Z">
+        <TotalTimeSeconds>135.3100000</TotalTimeSeconds>
+        <DistanceMeters>444.8367310</DistanceMeters>
+        <Calories>18</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Lap StartTime="2007-07-19T02:25:16Z">
+        <TotalTimeSeconds>72.2500000</TotalTimeSeconds>
+        <DistanceMeters>554.2578735</DistanceMeters>
+        <Calories>18</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Lap StartTime="2007-07-19T02:29:26Z">
+        <TotalTimeSeconds>12713.8100000</TotalTimeSeconds>
+        <DistanceMeters>77577.6953125</DistanceMeters>
+        <Calories>1130</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-07-19T00:22:58Z</Id>
+      <Lap StartTime="2007-07-19T00:22:58Z">
+        <TotalTimeSeconds>4515.0200000</TotalTimeSeconds>
+        <DistanceMeters>71318.9140625</DistanceMeters>
+        <Calories>1019</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Lap StartTime="2007-07-19T01:44:21Z">
+        <TotalTimeSeconds>2.6300000</TotalTimeSeconds>
+        <DistanceMeters>2.3046875</DistanceMeters>
+        <Calories>0</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-07-14T17:30:48Z</Id>
+      <Lap StartTime="2007-07-14T17:30:48Z">
+        <TotalTimeSeconds>3032.1200000</TotalTimeSeconds>
+        <DistanceMeters>5619.8603516</DistanceMeters>
+        <Calories>262</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Lap StartTime="2007-07-14T18:21:20Z">
+        <TotalTimeSeconds>1358.2800000</TotalTimeSeconds>
+        <DistanceMeters>1765.7934570</DistanceMeters>
+        <Calories>69</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+    <Activity Sport="Running">
+      <Id>2007-07-12T01:56:07Z</Id>
+      <Lap StartTime="2007-07-12T01:56:07Z">
+        <TotalTimeSeconds>3376.3200000</TotalTimeSeconds>
+        <DistanceMeters>5613.1972656</DistanceMeters>
+        <Calories>240</Calories>
+        <Intensity>Active</Intensity>
+        <TriggerMethod>Manual</TriggerMethod>
+      </Lap>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner305</Name>
+        <UnitId>3332601296</UnitId>
+        <ProductID>484</ProductID>
+        <Version>
+          <VersionMajor>2</VersionMajor>
+          <VersionMinor>60</VersionMinor>
+          <BuildMajor>0</BuildMajor>
+          <BuildMinor>0</BuildMinor>
+        </Version>
+      </Creator>
+    </Activity>
+  </Activities>
+  
+  <Author xsi:type="Application_t">
+    <Name>Garmin Communicator Plug-In</Name>
+    <Build>
+      <Version>
+        <VersionMajor>2</VersionMajor>
+        <VersionMinor>2</VersionMinor>
+        <BuildMajor>0</BuildMajor>
+        <BuildMinor>2</BuildMinor>
+      </Version>
+      <Type>Beta</Type>
+      <Time>Aug 29 2007, 09:42:31</Time>
+      <Builder>wissenba</Builder>
+    </Build>
+    <LangID>EN</LangID>
+    <PartNumber>006-A0161-00</PartNumber>
+  </Author>
+  
+</TrainingCenterDatabase>
