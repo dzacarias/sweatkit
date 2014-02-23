@@ -1,11 +1,14 @@
 (ns io.sweat.kit.parse.tcx
+  "TCX to SweatKit format parser. Currently, it only supports simple activities (e.g no multisport nor workouts)"
   (:require [clojure.xml :as xml]
             [clojure.zip :as zip]
             [clojure.data.zip.xml :as zip-xml :refer [xml-> xml1-> attr]]
             [clojure.java.io :as io]
             [clj-time.format :as time]))
 
-;;;;;;;; Helper fns ;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- tcx-zip [tcx]
   (-> tcx io/file xml/parse zip/xml-zip))
@@ -26,31 +29,54 @@
 (defn- xml1->inst [loc & preds]
   (some-> (apply xml1->text loc preds) time/parse))
 
-;;;;;;;; Main fns ;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Main 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmulti parse-loc #(-> % zip/node :tag))
+(def ^:private sports
+  {"Running" :running
+   "Biking"  :cycling
+   "Other"   :other})
+
+(def ^:private lap-triggers
+  {"Manual"    :manual
+   "Distance"  :distance
+   "Location"  :location
+   "Time"      :time
+   "HeartRate" :hr})
+
+(def ^:private intensities
+  {"Active" :active
+   "Resting" :resting})
+
+(defmulti ^:private parse-loc #(-> % zip/node :tag))
 
 (defmethod parse-loc :default [loc])
 
 (defmethod parse-loc :Activity [act]
-  {:dtstart (xml1->inst act :Id)
+  {:start (xml1->inst act :Id)
    :name (xml1->text act :Notes)
-   :sport (attr act :Sport) ;; TODO enum
+   :sport (get sports (attr act :Sport))
    :laps (for [lap (xml-> act :Lap)]
            (parse-loc lap))
    :notes (xml1->text act :Notes)})
 
 (defmethod parse-loc :Lap [lap]
-  {:dtstart (time/parse (attr lap :StartTime))
+  {:start (time/parse (attr lap :StartTime))
    :duration (xml1->double lap :TotalTimeSeconds)
    :distance (xml1->double lap :DistanceMeters)
+   :speed (xml1->double lap :Extensions :LX :AvgSpeed)
    :max-speed (xml1->double lap :MaximumSpeed)
    :calories (xml1->int lap :Calories)
-   :avg-hr (xml1->int lap :AverageHeartRateBpm :Value)
+   :hr (xml1->int lap :AverageHeartRateBpm :Value)
    :max-hr (xml1->int lap :MaximumHeartRateBpm :Value)
-   :intensity (xml1->text lap :Intensity)
-   :cadence (xml1->int lap :Cadence)
-   :trigger (xml1->text lap :TriggerMethod) ;;; TODO enum
+   :intensity (get intensities (xml1->text lap :Intensity)) 
+   :cadence (or (xml1->int lap :Cadence)
+                (xml1->int lap :Extensions :LX :AvgRunCadence))
+   :max-cadence (or (xml1->int lap :Extensions :LX :MaxBikeCadence)
+                    (xml1->int lap :Extensions :LX :MaxRunCadence))
+   :steps (xml1->int lap :Extensions :LX :Steps)
+   :trigger (get lap-triggers (xml1->text lap :TriggerMethod)) 
    :notes (xml1->text lap :Notes)
    :track (for [tpnt (xml-> lap :Track :Trackpoint)]
             (parse-loc tpnt))})
@@ -62,13 +88,16 @@
    :altitude (xml1->double tpnt :AltitudeMeters)
    :distance (xml1->double tpnt :DistanceMeters)
    :hr (xml1->int tpnt :HeartRateBpm :Value)
-   :cadence (xml1->int tpnt :Cadence)})
-
+   :cadence (or (xml1->int tpnt :Cadence)
+                (xml1->int tpnt :Extensions :TPX :RunCadence))
+   :power (xml1->double tpnt :Extensions :TPX :Watts)
+   :speed (xml1->double tpnt :Extensions :TPX :Speed)})
+   
 (defn parse [tcx]
   (let [z (tcx-zip tcx)]
     {:activities (for [act (xml-> z :Activities :Activity)] 
                    (parse-loc act))}))                                        
 (comment 
-  (def r (io/resource "FitnessHistoryDetail.tcx"))
-  (time (let [p (parse (.getPath r))] nil))
+  (def r (io/file "test-resources/FitnessHistoryDetail.tcx"))
+  (time (let [p (parse (.getPath r))] p))
   (clojure.pprint/pprint p))
