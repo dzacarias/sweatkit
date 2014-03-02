@@ -36,10 +36,7 @@
   (inst [this])
   (value [this]))
 
-(defprotocol ISport
-  (sport [this]))
-
-(defprotocol IMultiSport
+(defprotocol ISports
   (sports [this]))
 
 ;; ==============================================================================
@@ -84,8 +81,8 @@
                      {sm tk}))]
     (reify
       
-      ISport
-      (sport [_] (:sport s))
+      ISports
+      (sports [_] [(:sport s)])
 
       IInterval
       (trigger [_] (:trigger s))
@@ -126,8 +123,12 @@
       (duration [this] (->> (segments this) (map duration) (reduce +)))
       (active? [this] (->> (segments this) (every? active?)))
 
-      IMultiSport
-      (sports [this] (->> (segments this) (map sport))))))
+      ISports
+      (sports [this] (->> (segments this)
+                          (mapcat sports)
+                          (into [(:sport a)])
+                          (remove nil?)
+                          distinct)))))
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
@@ -135,7 +136,8 @@
   (def a (first (:activities p)))
   (def s (first (:segments a)))
   (def act (activity a))
-  
+
+  (sports act)
   (m (first (segments act)) :position)
   
   )
