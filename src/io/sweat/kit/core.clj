@@ -1,11 +1,11 @@
 (ns io.sweat.kit.core)
 
-;; ============================================================
+;; ==============================================================================
 ;; Vars
 
 (def sport-metrics #{:hr :power :cadence :speed :position :distance})
 
-;; ============================================================
+;; ==============================================================================
 ;; Protocols
 
 (defprotocol IInterval
@@ -42,7 +42,7 @@
 (defprotocol IMultiSport
   (sports [this]))
 
-;; ============================================================
+;; ==============================================================================
 ;; Instance constructors
 
 (defn point
@@ -75,64 +75,59 @@
 (defn segment
   "Segment ctor"
   [s]
-  (reify
-    
-    ISport
-    (sport [_] (:sport s))
+  (let [tpnts (for [t (:tracks s) tp t [k v] tp :when (not (nil? v))]
+                (select-keys tp [:instant k]))
+        trks (into {}
+                   (for [sm sport-metrics
+                         :let [tk (filter sm tpnts)]
+                         :when (not (zero? (count tk)))]
+                     {sm tk}))]
+    (reify
+      
+      ISport
+      (sport [_] (:sport s))
 
-    IInterval
-    (trigger [_] (:trigger s))
-    (dtstart [_] (:start s))
-    (duration [_] (:duration s))
-    (active? [_] (= :active s))
+      IInterval
+      (trigger [_] (:trigger s))
+      (dtstart [_] (:start s))
+      (duration [_] (:duration s))
+      (active? [_] (= :active s))
 
-    IAnnotation
-    (title [_] (:title s))
-    (notes [_] (:notes s))
-    
-    IMetric
-    (m [this k & preds]
-      (k (tracks this)))
-    
-    IMultiTrack
-    (metrics [this]
-      (keys (tracks this)))
-    (tracks [this]
-      (let [tpnts (for [t (:tracks s) tp t [k v] tp :when (not (nil? v))]
-                    (select-keys tp [:instant k]))]
-        (into {}
-              (for [sm sport-metrics
-                    :let [tk (filter sm tpnts)]
-                    :when (not (zero? (count tk)))]
-                {sm tk}))))))
+      IAnnotation
+      (title [_] (:title s))
+      (notes [_] (:notes s))
+      
+      IMetric
+      (m [this k & preds]
+        (k (tracks this)))
+      
+      IMultiTrack
+      (metrics [this] (keys (tracks this)))
+      (tracks [this] trks))))
 
 (defn activity
   "Activity ctor"
   [a]
-  (reify 
+  (let [sgmts (->> (:segments a)
+                   (map segment)
+                   (sort #(compare (dtstart %1) (dtstart %2))))]
+    (reify 
 
-    IAnnotation
-    (title [_] (:title a))
-    (notes [_] (:notes a))
-    
-    ISegmented
-    (segments [_] (->> (:segments a)
-                       (map segment)
-                       (sort #(compare (dtstart %1) (dtstart %2)))))
+      IAnnotation
+      (title [_] (:title a))
+      (notes [_] (:notes a))
+      
+      ISegmented
+      (segments [_] sgmts)
 
-    IInterval
-    (trigger [_] :none)
-    (dtstart [this]  (->> (segments this)
-                          first
-                          dtstart))
-    (duration [this] (->> (segments this)
-                          (map duration)
-                          (reduce +)))
-    (active? [this] (->> (segments this)
-                         (every? active?)))
+      IInterval
+      (trigger [_] :none)
+      (dtstart [this]  (->> (segments this) first dtstart))
+      (duration [this] (->> (segments this) (map duration) (reduce +)))
+      (active? [this] (->> (segments this) (every? active?)))
 
-    IMultiSport
-    (sports [this] (->> (segments this) (map sport)))))
+      IMultiSport
+      (sports [this] (->> (segments this) (map sport))))))
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
@@ -141,6 +136,6 @@
   (def s (first (:segments a)))
   (def act (activity a))
   
-
+  (m (first (segments act)) :position)
   
   )
