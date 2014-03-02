@@ -25,16 +25,15 @@
   (m [this k & preds]))
 
 (defprotocol IMetricTrack
-  (metric [this])
   (points [this]))
-
-(defprotocol IMultiTrack
-  (tracks [this])
-  (metrics [this]))
 
 (defprotocol ITrackPoint
   (inst [this])
   (value [this]))
+
+(defprotocol ITracked
+  (tracks [this])
+  (metrics [this]))
 
 (defprotocol ISports
   (sports [this]))
@@ -66,7 +65,6 @@
     (m [this k & preds])
 
     IMetricTrack
-    (metric [this] mtc)
     (points [this] (map #(point % mtc) trk))))
 
 (defn segment
@@ -98,7 +96,7 @@
       (m [this k & preds]
         (k (tracks this)))
       
-      IMultiTrack
+      ITracked
       (metrics [this] (keys (tracks this)))
       (tracks [this] trks))))
 
