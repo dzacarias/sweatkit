@@ -54,32 +54,32 @@
 (defmethod parse-loc :default [loc])
 
 (defmethod parse-loc :Activity [act]
-  {:start (xml1->inst act :Id)
-   :name (xml1->text act :Notes)
+  {:dtstart (xml1->inst act :Id)
+   :title (xml1->text act :Notes)
    :sport (get sports (attr act :Sport))
-   :laps (for [lap (xml-> act :Lap)]
-           (parse-loc lap))
+   :segments (for [lap (xml-> act :Lap)]
+               (parse-loc lap))
    :notes (xml1->text act :Notes)})
 
 (defmethod parse-loc :Lap [lap]
-  {:start (time/parse (attr lap :StartTime))
+  {:dtstart (time/parse (attr lap :StartTime))
    :duration (xml1->double lap :TotalTimeSeconds)
    :distance (xml1->double lap :DistanceMeters)
-   :speed (xml1->double lap :Extensions :LX :AvgSpeed)
-   :max-speed (xml1->double lap :MaximumSpeed)
    :calories (xml1->int lap :Calories)
-   :hr (xml1->int lap :AverageHeartRateBpm :Value)
-   :max-hr (xml1->int lap :MaximumHeartRateBpm :Value)
-   :intensity (get intensities (xml1->text lap :Intensity)) 
-   :cadence (or (xml1->int lap :Cadence)
-                (xml1->int lap :Extensions :LX :AvgRunCadence))
-   :max-cadence (or (xml1->int lap :Extensions :LX :MaxBikeCadence)
-                    (xml1->int lap :Extensions :LX :MaxRunCadence))
+   :active (= :active (get intensities (xml1->text lap :Intensity))) 
    :steps (xml1->int lap :Extensions :LX :Steps)
    :trigger (get lap-triggers (xml1->text lap :TriggerMethod)) 
    :notes (xml1->text lap :Notes)
-   :track (for [tpnt (xml-> lap :Track :Trackpoint)]
-            (parse-loc tpnt))})
+   :hr {:avg (xml1->int lap :AverageHeartRateBpm :Value)
+        :max (xml1->int lap :MaximumHeartRateBpm :Value)}
+   :speed {:avg (xml1->double lap :Extensions :LX :AvgSpeed)
+           :max (xml1->double lap :MaximumSpeed)}
+   :cadence {:avg (or (xml1->int lap :Cadence)
+                      (xml1->int lap :Extensions :LX :AvgRunCadence))
+             :max (or (xml1->int lap :Extensions :LX :MaxBikeCadence)
+                    (xml1->int lap :Extensions :LX :MaxRunCadence))}
+   :tracks [(for [tpnt (xml-> lap :Track :Trackpoint)]
+              (parse-loc tpnt))]})
 
 (defmethod parse-loc :Trackpoint [tpnt]
   {:instant (xml1->inst tpnt :Time)
