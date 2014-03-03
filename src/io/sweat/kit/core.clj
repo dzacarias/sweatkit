@@ -24,9 +24,6 @@
 (defprotocol IMetric
   (m [this k & preds]))
 
-(defprotocol IMetricTrack
-  (points [this]))
-
 (defprotocol ITrackPoint
   (inst [this])
   (value [this]))
@@ -62,10 +59,7 @@
     (active? [this])
     
     IMetric
-    (m [this k & preds])
-
-    IMetricTrack
-    (points [this] (map #(point % mtc) trk))))
+    (m [this k & preds])))
 
 (defn segment
   "Segment ctor"
