@@ -56,7 +56,7 @@
 (defmethod parse-loc :Activity [act]
   {:dtstart (xml1->inst act :Id)
    :title (xml1->text act :Notes)
-   :sport (get sports (attr act :Sport))
+   :sports [(get sports (attr act :Sport))]
    :segments (for [lap (xml-> act :Lap)]
                (parse-loc lap))
    :notes (xml1->text act :Notes)})

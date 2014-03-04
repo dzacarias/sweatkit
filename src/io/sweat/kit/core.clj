@@ -21,9 +21,6 @@
 (defprotocol ISegmented
   (segments [this]))
 
-(defprotocol IMetric
-  (m [this k & preds]))
-
 (defprotocol ITrackPoint
   (inst [this])
   (value [this]))
@@ -56,25 +53,22 @@
     (dtstart [this])
     (duration [this])
     (trigger [this])
-    (active? [this])
-    
-    IMetric
-    (m [this k & preds])))
+    (active? [this])))
 
 (defn segment
   "Segment ctor"
   [s]
   (let [tpnts (for [t (:tracks s) tp t [k v] tp :when (not (nil? v))]
                 (select-keys tp [:instant k]))
-        trks (into {}
-                   (for [sm sport-metrics
-                         :let [tk (filter sm tpnts)]
-                         :when (not (zero? (count tk)))]
-                     {sm tk}))]
+        trks (into
+              {} (for [sm sport-metrics
+                       :let [tk (filter sm tpnts)]
+                       :when (not (zero? (count tk)))]
+                   {sm tk}))]
     (reify
       
       ISports
-      (sports [_] [(:sport s)])
+      (sports [_] (:sports s))
 
       IInterval
       (trigger [_] (:trigger s))
@@ -85,10 +79,6 @@
       IAnnotation
       (title [_] (:title s))
       (notes [_] (:notes s))
-      
-      IMetric
-      (m [this k & preds]
-        (k (tracks this)))
       
       ITracked
       (metrics [this] (keys (tracks this)))
@@ -118,7 +108,7 @@
       ISports
       (sports [this] (->> (segments this)
                           (mapcat sports)
-                          (into [(:sport a)])
+                          (into (:sports a))
                           (remove nil?)
                           distinct)))))
 
