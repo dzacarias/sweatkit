@@ -34,7 +34,7 @@
   (metric [this]))
 
 ;; ==============================================================================
-;; Public fns 
+;; Fns
  
 (defn measurement? [x] (satisfies? IMeasurement x))
 
@@ -44,27 +44,27 @@
 (defn seq-metric? [m]
   (contains? #{:hr :power :cadence :speed :altitude} m))
 
-(defmulti reduce-metric
+(defmulti ^:private reduce-mseq
   (fn [m rfn mseq]
     (when (every? #(and (measurement? %) (= m (metric %))) mseq)
       rfn)))
 
-(defmethod reduce-metric :default [_ rfn mseq]
+(defmethod reduce-mseq :default [_ rfn mseq]
   (reduce rfn mseq))
                                         
-(defmethod reduce-metric :avg [m _ mseq]
+(defmethod reduce-mseq :avg [m _ mseq]
   (when (seq-metric? m)
     (/ (reduce + (map value mseq)) (count mseq))))
 
-(defmethod reduce-metric :min [m _ mseq]
+(defmethod reduce-mseq :min [m _ mseq]
   (when (seq-metric? m)
     (apply min (map value mseq))))
 
-(defmethod reduce-metric :max [m _ mseq]
+(defmethod reduce-mseq :max [m _ mseq]
   (when (seq-metric? m)
     (apply max (map value mseq))))
 
-(defmethod reduce-metric :total [m _ mseq]
+(defmethod reduce-mseq :total [m _ mseq]
   (when (acc-metric? m)
     (apply max (map value mseq))))
 
@@ -90,7 +90,7 @@
     (:track (m metrics)))
   (mget [this m rfn]
     (if (tracked? this m)
-      (reduce-metric m rfn (track this m))
+      (reduce-mseq m rfn (track this m))
       (when (keyword? rfn) (rfn (m metrics))))))
                                         
 (defrecord Activity [dtstart annotations segments]
@@ -110,7 +110,7 @@
   (tracked? [this m]
     (not (empty? (track this m))))
   (mget [this m rfn] 
-    (reduce-metric m rfn (track this m))))
+    (reduce-mseq m rfn (track this m))))
 
 ;; ====================================================================
 
