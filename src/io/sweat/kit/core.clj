@@ -1,125 +1,128 @@
-(ns io.sweat.kit.core)
+(ns io.sweat.kit.core
+  (:require [clojure.set :as st]))
 
 ;; ==============================================================================
 ;; Vars
 
-(def sport-metrics #{:hr :power :cadence :speed :position :distance})
+(def metric-types #{:hr :power :cadence :steps :speed :distance :position :altitude})
+(def trigger-types (st/union #{:manual :time} metric-types))
+(def sport-types #{:running :cycling})
 
 ;; ==============================================================================
 ;; Protocols
 
-(defprotocol IInterval
-  (dtstart [this])
-  (duration [this])
-  (trigger [this])
-  (active? [this]))
-
-(defprotocol IAnnotation
-  (title [this])
-  (notes [this]))
-
-(defprotocol ISegmented
-  (segments [this]))
-
-(defprotocol ITrackPoint
-  (inst [this])
-  (value [this]))
-
-(defprotocol ITracked
-  (tracks [this])
-  (metrics [this]))
-
 (defprotocol ISports
+  "Something that has a sequence of Sports"
   (sports [this]))
 
+(defprotocol IInterval
+  "A time interval has a initial instant and a duration."
+  (dtstart [this])
+  (duration [this]))
+
+(defprotocol IMeasured
+  "Sports metrics associated with something."
+  (metrics [this])
+  (tracked? [this metric])
+  (track [this metric])
+  (mget [this metric rfn]))
+
+(defprotocol IMeasurement
+  "A point measurement for a given metric"
+  (inst [this])
+  (value [this])
+  (metric [this]))
+
 ;; ==============================================================================
-;; Instance constructors
+;; Public fns 
+ 
+(defn measurement? [x] (satisfies? IMeasurement x))
 
-(defn point
-  "Point ctor"
-  [p metric]
-  (reify 
-    
-    ITrackPoint
-    (inst [this] (:instant p))
-    (value [this] (metric p))))
+(defn acc-metric? [m]
+  (contains? #{:steps :distance} m))
 
-(defn track
-  "Track ctor"
-  [trk mtc]
-  (reify 
+(defn seq-metric? [m]
+  (contains? #{:hr :power :cadence :speed :altitude} m))
 
-    IInterval
-    (dtstart [this])
-    (duration [this])
-    (trigger [this])
-    (active? [this])))
+(defmulti reduce-metric
+  (fn [m rfn mseq]
+    (when (every? #(and (measurement? %) (= m (metric %))) mseq)
+      rfn)))
 
-(defn segment
-  "Segment ctor"
-  [s]
-  (let [tpnts (for [t (:tracks s) tp t [k v] tp :when (not (nil? v))]
-                (select-keys tp [:instant k]))
-        trks (into
-              {} (for [sm sport-metrics
-                       :let [tk (filter sm tpnts)]
-                       :when (not (zero? (count tk)))]
-                   {sm tk}))]
-    (reify
-      
-      ISports
-      (sports [_] (:sports s))
+(defmethod reduce-metric :default [_ rfn mseq]
+  (reduce rfn mseq))
+                                        
+(defmethod reduce-metric :avg [m _ mseq]
+  (when (seq-metric? m)
+    (/ (reduce + (map value mseq)) (count mseq))))
 
-      IInterval
-      (trigger [_] (:trigger s))
-      (dtstart [_] (:start s))
-      (duration [_] (:duration s))
-      (active? [_] (= :active s))
+(defmethod reduce-metric :min [m _ mseq]
+  (when (seq-metric? m)
+    (apply min (map value mseq))))
 
-      IAnnotation
-      (title [_] (:title s))
-      (notes [_] (:notes s))
-      
-      ITracked
-      (metrics [this] (keys (tracks this)))
-      (tracks [this] trks))))
+(defmethod reduce-metric :max [m _ mseq]
+  (when (seq-metric? m)
+    (apply max (map value mseq))))
 
-(defn activity
-  "Activity ctor"
-  [a]
-  (let [sgmts (->> (:segments a)
-                   (map segment)
-                   (sort #(compare (dtstart %1) (dtstart %2))))]
-    (reify 
+(defmethod reduce-metric :total [m _ mseq]
+  (when (acc-metric? m)
+    (apply max (map value mseq))))
 
-      IAnnotation
-      (title [_] (:title a))
-      (notes [_] (:notes a))
-      
-      ISegmented
-      (segments [_] sgmts)
+;; ==============================================================================
+;; Datatypes
 
-      IInterval
-      (trigger [_] :none)
-      (dtstart [this]  (->> (segments this) first dtstart))
-      (duration [this] (->> (segments this) (map duration) (reduce +)))
-      (active? [this] (->> (segments this) (every? active?)))
+(defrecord Measurement [instant value metric]
+  IMeasurement
+  (inst [this] instant)
+  (value [this] value)
+  (metric [this] metric))
 
-      ISports
-      (sports [this] (->> (segments this)
-                          (mapcat sports)
-                          (into (:sports a))
-                          (remove nil?)
-                          distinct)))))
+(defrecord Segment [dtstart duration sport active trigger annotations metrics]
+  IInterval
+  (dtstart [_] dtstart)
+  (duration [_] duration)
+  IMeasured
+  (metrics [this]
+    (keys metrics))
+  (tracked? [this m]
+    (not (empty? (track this m))))
+  (track [this m]
+    (:track (m metrics)))
+  (mget [this m rfn]
+    (if (tracked? this m)
+      (reduce-metric m rfn (track this m))
+      (when (keyword? rfn) (rfn (m metrics))))))
+                                        
+(defrecord Activity [dtstart annotations segments]
+  ISports
+  (sports [this]
+    (->> segments (map :sport) (remove nil?) distinct))
+  IInterval
+  (dtstart [this]
+    (or dtstart (->> segments first dtstart)))
+  (duration [this]
+    (->> segments (map duration) (reduce +)))
+  IMeasured
+  (metrics [this]
+    (->> segments (mapcat metrics) distinct))
+  (track [this m]
+    (mapcat #(track % m) segments))
+  (tracked? [this m]
+    (not (empty? (track this m))))
+  (mget [this m rfn] 
+    (reduce-metric m rfn (track this m))))
+
+;; ====================================================================
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
   (def p (io.sweat.kit.parse.tcx/parse (.getPath r)))
   (def a (first (:activities p)))
   (def s (first (:segments a)))
-  (def act (activity a))
-
-  (sports act)
-  (m (first (segments act)) :position)
   
-  )
+  (sports a)
+  (metrics a)
+  (mget s :distance :total)
+  (mget s :altitude :max)
+  (mget s :altitude :min)
+  (mget s :altitude :avg))

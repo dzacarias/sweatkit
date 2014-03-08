@@ -4,11 +4,11 @@
             [clojure.zip :as zip]
             [clojure.data.zip.xml :as zip-xml :refer [xml-> xml1-> attr]]
             [clojure.java.io :as io]
-            [clj-time.format :as time]))
+            [clj-time.format :as time]
+            [io.sweat.kit.core :as sk]))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ==============================================================================
 ;; Helpers
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- tcx-zip [tcx]
   (-> tcx io/file xml/parse zip/xml-zip))
@@ -29,9 +29,8 @@
 (defn- xml1->inst [loc & preds]
   (some-> (apply xml1->text loc preds) time/parse))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ==============================================================================
 ;; Main 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def ^:private sports
   {"Running" :running
@@ -49,55 +48,83 @@
   {"Active" :active
    "Resting" :resting})
 
+(defn- get-track [tks metric]
+  (map #(sk/->Measurement (:instant %) (metric %) metric)
+       (filter metric tks)))
+
+(defn- get-metric [metric tks loc]
+  (when-let
+      [m (merge
+          (condp = metric
+            :distance (when-let [t (xml1->double loc :DistanceMeters)] {:total t})
+            :calories (when-let [t (xml1->int loc :Calories)] {:total t})
+            :steps    (when-let [t (xml1->int loc :Extensions :LX :Steps)] {:total t})
+            :hr       (merge (when-let [a (xml1->int loc :AverageHeartRateBpm :Value)]
+                               {:avg a})
+                             (when-let [m (xml1->int loc :MaximumHeartRateBpm :Value)]
+                               {:max m}))
+            :speed    (merge (when-let [a (xml1->double loc :Extensions :LX :AvgSpeed)]
+                               {:avg a})
+                             (when-let [m (xml1->double loc :MaximumSpeed)]
+                               {:max m}))
+            :cadence  (merge (when-let [a (or (xml1->int loc :Cadence)
+                                              (xml1->int loc :Extensions :LX :AvgRunCadence))]
+                               {:avg a})
+                             (when-let [m (or (xml1->int loc :Extensions :LX :MaxBikeCadence)
+                                              (xml1->int loc :Extensions :LX :MaxRunCadence))]
+                               {:max m}))
+            nil)
+          (when-let [tk (get-track tks metric)]
+            (when-not (empty? tk) {:track tk})))]
+    {metric m}))
+
 (defmulti ^:private parse-loc #(-> % zip/node :tag))
 
 (defmethod parse-loc :default [loc])
 
 (defmethod parse-loc :Activity [act]
   {:dtstart (xml1->inst act :Id)
-   :title (xml1->text act :Notes)
-   :sports [(get sports (attr act :Sport))]
+   :annotations {:notes (xml1->text act :Notes)}
    :segments (for [lap (xml-> act :Lap)]
-               (parse-loc lap))
-   :notes (xml1->text act :Notes)})
+               (sk/map->Segment
+                (merge {:sport (get sports (attr act :Sport))}
+                       (parse-loc lap))))})
 
 (defmethod parse-loc :Lap [lap]
-  {:dtstart (time/parse (attr lap :StartTime))
-   :duration (xml1->double lap :TotalTimeSeconds)
-   :distance (xml1->double lap :DistanceMeters)
-   :calories (xml1->int lap :Calories)
-   :active (= :active (get intensities (xml1->text lap :Intensity))) 
-   :steps (xml1->int lap :Extensions :LX :Steps)
-   :trigger (get lap-triggers (xml1->text lap :TriggerMethod)) 
-   :notes (xml1->text lap :Notes)
-   :hr {:avg (xml1->int lap :AverageHeartRateBpm :Value)
-        :max (xml1->int lap :MaximumHeartRateBpm :Value)}
-   :speed {:avg (xml1->double lap :Extensions :LX :AvgSpeed)
-           :max (xml1->double lap :MaximumSpeed)}
-   :cadence {:avg (or (xml1->int lap :Cadence)
-                      (xml1->int lap :Extensions :LX :AvgRunCadence))
-             :max (or (xml1->int lap :Extensions :LX :MaxBikeCadence)
-                    (xml1->int lap :Extensions :LX :MaxRunCadence))}
-   :tracks [(for [tpnt (xml-> lap :Track :Trackpoint)]
-              (parse-loc tpnt))]})
+  (let [tks (for [tpnt (xml-> lap :Track :Trackpoint) :let [tp (parse-loc tpnt)]
+                  [k v] tp :when (not (nil? v))]
+              (select-keys tp [:instant k]))]
+    {:dtstart     (time/parse (attr lap :StartTime))
+     :duration    (xml1->double lap :TotalTimeSeconds)
+     :active      (= :active (get intensities (xml1->text lap :Intensity))) 
+     :trigger     (get lap-triggers (xml1->text lap :TriggerMethod)) 
+     :annotations {:notes (xml1->text lap :Notes)}
+     :metrics     (apply merge (map #(get-metric % tks lap) sk/metric-types))}))
 
 (defmethod parse-loc :Trackpoint [tpnt]
-  {:instant (xml1->inst tpnt :Time)
-   :position {:lat (xml1->double tpnt :Position :LatitudeDegrees)
-              :lng (xml1->double tpnt :Position :LongitudeDegrees)}
-   :altitude (xml1->double tpnt :AltitudeMeters)
-   :distance (xml1->double tpnt :DistanceMeters)
-   :hr (xml1->int tpnt :HeartRateBpm :Value)
-   :cadence (or (xml1->int tpnt :Cadence)
-                (xml1->int tpnt :Extensions :TPX :RunCadence))
-   :power (xml1->double tpnt :Extensions :TPX :Watts)
-   :speed (xml1->double tpnt :Extensions :TPX :Speed)})
-   
+  (merge {:instant  (xml1->inst tpnt :Time)}
+         (when-let [lat (xml1->double tpnt :Position :LatitudeDegrees)]
+           {:position {:lat lat
+                       :lng (xml1->double tpnt :Position :LongitudeDegrees)}})
+         (when-let [alt (xml1->double tpnt :AltitudeMeters)]
+           {:altitude alt})
+         (when-let [dst (xml1->double tpnt :DistanceMeters)]
+           {:distance dst})
+         (when-let [hr (xml1->int tpnt :HeartRateBpm :Value)]
+           {:hr hr})
+         (when-let [cad (or (xml1->int tpnt :Cadence)
+                            (xml1->int tpnt :Extensions :TPX :RunCadence))]
+           {:cadence cad})
+         (when-let [pow (xml1->double tpnt :Extensions :TPX :Watts)]
+           {:power pow})
+         (when-let [spd (xml1->double tpnt :Extensions :TPX :Speed)]
+           {:speed spd})))
+
 (defn parse [tcx]
   (let [z (tcx-zip tcx)]
     {:activities (for [act (xml-> z :Activities :Activity)] 
-                   (parse-loc act))}))                                        
+                   (sk/map->Activity (parse-loc act)))}))
+
 (comment 
   (def r (io/file "test-resources/FitnessHistoryDetail.tcx"))
-  (time (let [p (parse (.getPath r))] p))
-  (clojure.pprint/pprint p))
+  (def p (parse (.getPath r))))
