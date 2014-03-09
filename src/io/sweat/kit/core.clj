@@ -1,5 +1,6 @@
 (ns io.sweat.kit.core
-  (:require [clojure.set :as st]))
+  (:require [clojure.set :as st]
+            [clj-time.core :as time]))
 
 ;; ==============================================================================
 ;; Vars
@@ -21,10 +22,11 @@
   (duration [this]))
 
 (defprotocol IMeasured
-  "Sports metrics associated with something."
+  "Sports metrics taken over a time interval."
   (metrics [this])
   (tracked? [this metric])
   (track [this metric])
+  (interval [this])
   (mget [this metric rfn]))
 
 (defprotocol IMeasurement
@@ -37,6 +39,8 @@
 ;; Fns
  
 (defn measurement? [x] (satisfies? IMeasurement x))
+
+(defn measured? [x] (satisfies? IMeasured x))
 
 (defn acc-metric? [m]
   (contains? #{:steps :distance} m))
@@ -88,6 +92,7 @@
     (not (empty? (track this m))))
   (track [this m]
     (:track (m metrics)))
+  (interval [this] this)
   (mget [this m rfn]
     (if (tracked? this m)
       (reduce-mseq m rfn (track this m))
@@ -103,14 +108,47 @@
   (duration [this]
     (->> segments (map duration) (reduce +)))
   IMeasured
+  (metrics [_] (metrics segments))
+  (tracked? [_ m] (tracked? segments m))
+  (track [_ m] (track segments m))
+  (interval [this] this)
+  (mget [_  m rfn] (mget segments m rfn)))
+
+(extend-type clojure.lang.ISeq
+  IMeasured
   (metrics [this]
-    (->> segments (mapcat metrics) distinct))
+    (cond 
+     (every? measured? this)    (->> this (mapcat metrics) distinct)
+     (every? measurement? this) (->> this (mapcat metric) distinct)))
   (track [this m]
-    (mapcat #(track % m) segments))
+    (cond
+     (every? measured? this) (mapcat #(track % m) this)
+     (every? measurement? this) (filter #(= (metric %) m) this)))
   (tracked? [this m]
     (not (empty? (track this m))))
-  (mget [this m rfn] 
-    (reduce-mseq m rfn (track this m))))
+  (interval [this]
+    (let [sval (cond
+                (every? measurement? this) inst
+                (every? measured? this) dtstart)
+          sthis (sort #(compare (sval %1) (sval %2)) this)]
+      (reify IInterval
+        (dtstart [this]
+          (when-let [f (first sthis)]
+            (sval f)))
+        (duration [this]
+          (when-let [f (first sthis)]
+            (time/in-seconds
+             (time/interval (sval f) (sval (last sthis)))))))))
+  (mget [this m rfn]
+    (reduce-mseq
+     m rfn
+     (if (every? measured? this)
+       (remove nil?
+               (map
+                #(when-let [v (mget % m rfn)]
+                   (->Measurement (dtstart %) v m))
+                (track this m)))
+       this))))
 
 ;; ====================================================================
 
@@ -122,6 +160,7 @@
   
   (sports a)
   (metrics a)
+  (def sgmts (:segments a))
   (mget s :distance :total)
   (mget s :altitude :max)
   (mget s :altitude :min)
