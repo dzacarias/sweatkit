@@ -5,8 +5,11 @@
 ;; ==============================================================================
 ;; Vars
 
-(def metric-types #{:hr :power :cadence :steps :speed :distance :position :altitude})
+(def metric-types
+  #{:hr :power :cadence :steps :speed :distance :position :altitude :calories})
+
 (def trigger-types (st/union #{:manual :time} metric-types))
+
 (def sport-types #{:running :cycling})
 
 ;; ==============================================================================
@@ -23,14 +26,14 @@
 
 (defprotocol IMeasured
   "Sports metrics taken over a time interval."
+  (interval [this])
   (metrics [this])
   (tracked? [this metric])
   (track [this metric])
-  (interval [this])
   (mget [this metric rfn]))
 
 (defprotocol IMeasurement
-  "A point measurement for a given metric"
+  "A point measurement for some metric"
   (inst [this])
   (value [this])
   (metric [this]))
@@ -42,12 +45,6 @@
 
 (defn measured? [x] (satisfies? IMeasured x))
 
-(defn acc-metric? [m]
-  (contains? #{:steps :distance} m))
-
-(defn seq-metric? [m]
-  (contains? #{:hr :power :cadence :speed :altitude} m))
-
 (defmulti ^:private reduce-mseq
   (fn [m rfn mseq]
     (when (every? #(and (measurement? %) (= m (metric %))) mseq)
@@ -57,20 +54,16 @@
   (reduce rfn mseq))
                                         
 (defmethod reduce-mseq :avg [m _ mseq]
-  (when (seq-metric? m)
-    (/ (reduce + (map value mseq)) (count mseq))))
+  (/ (reduce + (map value mseq)) (count mseq)))
 
 (defmethod reduce-mseq :min [m _ mseq]
-  (when (seq-metric? m)
-    (apply min (map value mseq))))
+  (apply min (map value mseq)))
 
 (defmethod reduce-mseq :max [m _ mseq]
-  (when (seq-metric? m)
-    (apply max (map value mseq))))
+  (apply max (map value mseq)))
 
 (defmethod reduce-mseq :total [m _ mseq]
-  (when (acc-metric? m)
-    (apply max (map value mseq))))
+  (apply max (map value mseq)))
 
 ;; ==============================================================================
 ;; Datatypes
@@ -127,28 +120,30 @@
   (tracked? [this m]
     (not (empty? (track this m))))
   (interval [this]
-    (let [sval (cond
-                (every? measurement? this) inst
-                (every? measured? this) dtstart)
-          sthis (sort #(compare (sval %1) (sval %2)) this)]
+    (let [dtval (cond
+                 (every? measurement? this) #(inst %)
+                 (every? measured? this) #(dtstart (interval %)))
+          sthis (sort #(compare (dtval %1) (dtval %2)) this)]
       (reify IInterval
         (dtstart [this]
           (when-let [f (first sthis)]
-            (sval f)))
+            (dtval f)))
         (duration [this]
           (when-let [f (first sthis)]
             (time/in-seconds
-             (time/interval (sval f) (sval (last sthis)))))))))
+             (time/interval (dtval f) (dtval (last sthis)))))))))
   (mget [this m rfn]
     (reduce-mseq
      m rfn
-     (if (every? measured? this)
-       (remove nil?
-               (map
-                #(when-let [v (mget % m rfn)]
-                   (->Measurement (dtstart %) v m))
-                (track this m)))
-       this))))
+     (cond
+      (every? measured? this)
+      (remove nil?
+              (map #(when-let [v (mget % m rfn)]
+                      (->Measurement
+                       (dtstart (interval %)) v m))
+                   (track this m)))
+      (every? measurement? this)
+      this))))
 
 ;; ====================================================================
 
