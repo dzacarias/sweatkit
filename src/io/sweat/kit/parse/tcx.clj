@@ -49,7 +49,7 @@
    "Resting" :resting})
 
 (defn- get-track [tks metric]
-  (map #(sk/->Measurement (:instant %) (metric %) metric)
+  (map #(sk/->PointValue (:instant %) (metric %) metric)
        (filter metric tks)))
 
 (defn- get-metric [metric tks loc]

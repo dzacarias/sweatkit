@@ -12,8 +12,9 @@
 
 (def sport-types #{:running :cycling})
 
+
 ;; ==============================================================================
-;; Protocols
+;; Abstractions
 
 (defprotocol ISports
   "Something that has a sequence of Sports"
@@ -32,44 +33,103 @@
   (track [this metric])
   (mget [this metric rfn]))
 
-(defprotocol IMeasurement
-  "A point measurement for some metric"
+(defprotocol IPointValue
+  "A point value for some metric"
   (inst [this])
   (value [this])
   (metric [this]))
 
-;; ==============================================================================
-;; Fns
- 
-(defn measurement? [x] (satisfies? IMeasurement x))
+;; =============================================================================
+;; Public API
+
+(declare itv-ctor mseq-ctor reduce-pvseq mseq)
 
 (defn measured? [x] (satisfies? IMeasured x))
 
-(defmulti ^:private reduce-mseq
-  (fn [m rfn mseq]
-    (when (every? #(and (measurement? %) (= m (metric %))) mseq)
-      rfn)))
+(defn point-val? [x] (satisfies? IPointValue x))
 
-(defmethod reduce-mseq :default [_ rfn mseq]
-  (reduce rfn mseq))
-                                        
-(defmethod reduce-mseq :avg [m _ mseq]
-  (/ (reduce + (map value mseq)) (count mseq)))
+(defn splits [m])
 
-(defmethod reduce-mseq :min [m _ mseq]
-  (apply min (map value mseq)))
+(defn pace
+  ([m] (track m :pace))
+  ([m rfn] (mget m :pace rfn)))
 
-(defmethod reduce-mseq :max [m _ mseq]
-  (apply max (map value mseq)))
+(defn speed
+  ([m] (track m :speed))
+  ([m rfn] (mget m :speed rfn)))
 
-(defmethod reduce-mseq :total [m _ mseq]
-  (apply max (map value mseq)))
+(defn cals
+  ([m] (track m :calories))
+  ([m rfn] (mget m :calories rfn)))
 
-;; ==============================================================================
+(defn altitude
+  ([m] (track m :altitude))
+  ([m rfn] (mget m :altitude rfn)))
+
+(defn hr
+  ([m] (track m :hr))
+  ([m rfn] (mget m :hr rfn)))
+
+(defn power
+  ([m] (track m :power))
+  ([m rfn] (mget m :power rfn)))
+
+(defn cadence
+  ([m] (track m :cadence))
+  ([m rfn] (mget m :cadence rfn)))
+
+(defn steps
+  ([m] (track m :steps))
+  ([m rfn] (mget m :steps rfn)))
+
+(defn distance
+  ([m] (track m :distance))
+  ([m rfn] (mget m :distance rfn)))
+
+(defmulti mseq
+  (fn [coll] 
+    (cond
+     (every? measured? coll) :measured
+     (every? point-val? coll) :point-val)))
+
+(defmethod mseq :default [_])
+
+(defmethod mseq :measured [coll]
+  (let [dtval #(dtstart (interval %))
+        cs (mseq-ctor coll dtval)]
+    (reify
+      clojure.lang.Seqable
+      (seq [this] cs)
+      IMeasured
+      (metrics [this] (->> this (mapcat metrics) distinct))
+      (track [this m] (mapcat #(track % m) this))
+      (tracked? [this m] (not (empty? (track this m))))
+      (interval [_] (itv-ctor cs dtval))
+      (mget [this m rfn]
+        (reduce-pvseq
+         m rfn (remove nil?
+                       (map #(when-let [v (mget % m rfn)]
+                               (->PointValue (dtstart (interval %)) v m))
+                            this)))))))
+
+(defmethod mseq :point-val [coll]
+  (let [dtval #(inst %)
+        cs (mseq-ctor coll dtval)]
+    (reify
+      clojure.lang.Seqable
+      (seq [this] cs)
+      IMeasured
+      (metrics [this] (->> this (map metric) distinct))
+      (track [this m] (filter #(= (metric %) m) this))
+      (tracked? [this m] (not (empty? (track this m))))
+      (interval [this] (itv-ctor cs dtval))
+      (mget [this m rfn] (reduce-pvseq m rfn this)))))
+
+;; -----------------------------------------------------------------------------
 ;; Datatypes
 
-(defrecord Measurement [instant value metric]
-  IMeasurement
+(defrecord PointValue [instant value metric]
+  IPointValue
   (inst [this] instant)
   (value [this] value)
   (metric [this] metric))
@@ -79,16 +139,13 @@
   (dtstart [_] dtstart)
   (duration [_] duration)
   IMeasured
-  (metrics [this]
-    (keys metrics))
-  (tracked? [this m]
-    (not (empty? (track this m))))
-  (track [this m]
-    (:track (m metrics)))
+  (metrics [this] (keys metrics))
+  (tracked? [this m] (not (empty? (track this m))))
+  (track [this m] (:track (m metrics)))
   (interval [this] this)
   (mget [this m rfn]
     (if (tracked? this m)
-      (reduce-mseq m rfn (track this m))
+      (reduce-pvseq m rfn (track this m))
       (when (keyword? rfn) (rfn (m metrics))))))
                                         
 (defrecord Activity [dtstart annotations segments]
@@ -96,56 +153,60 @@
   (sports [this]
     (->> segments (map :sport) (remove nil?) distinct))
   IInterval
-  (dtstart [this]
-    (or dtstart (->> segments first dtstart)))
-  (duration [this]
-    (->> segments (map duration) (reduce +)))
+  (dtstart [this] dtstart)
+  (duration [this] (->> segments (map duration) (reduce +)))
   IMeasured
-  (metrics [_] (metrics segments))
-  (tracked? [_ m] (tracked? segments m))
-  (track [_ m] (track segments m))
+  (metrics [_] (metrics (mseq segments)))
+  (tracked? [_ m] (tracked? (mseq segments) m))
+  (track [_ m] (track (mseq segments) m))
   (interval [this] this)
-  (mget [_  m rfn] (mget segments m rfn)))
+  (mget [_  m rfn] (mget (mseq segments) m rfn)))
 
-(extend-type clojure.lang.ISeq
-  IMeasured
-  (metrics [this]
-    (cond 
-     (every? measured? this)    (->> this (mapcat metrics) distinct)
-     (every? measurement? this) (->> this (mapcat metric) distinct)))
-  (track [this m]
-    (cond
-     (every? measured? this) (mapcat #(track % m) this)
-     (every? measurement? this) (filter #(= (metric %) m) this)))
-  (tracked? [this m]
-    (not (empty? (track this m))))
-  (interval [this]
-    (let [dtval (cond
-                 (every? measurement? this) #(inst %)
-                 (every? measured? this) #(dtstart (interval %)))
-          sthis (sort #(compare (dtval %1) (dtval %2)) this)]
-      (reify IInterval
-        (dtstart [this]
-          (when-let [f (first sthis)]
-            (dtval f)))
-        (duration [this]
-          (when-let [f (first sthis)]
-            (time/in-seconds
-             (time/interval (dtval f) (dtval (last sthis)))))))))
-  (mget [this m rfn]
-    (reduce-mseq
-     m rfn
-     (cond
-      (every? measured? this)
-      (remove nil?
-              (map #(when-let [v (mget % m rfn)]
-                      (->Measurement
-                       (dtstart (interval %)) v m))
-                   (track this m)))
-      (every? measurement? this)
-      this))))
+;; =============================================================================
+;; Private API
 
-;; ====================================================================
+
+;; IPointValue seqs can be reduced to extract useful global values.
+;; The reduce-pvseq multimethod provides a way to apply some default
+;; reducers (:avg, :max, :min, :total), as well as using some other reducing fn. 
+
+(defmulti ^:private reduce-pvseq (fn [m rfn pvseq] rfn))
+
+(defmethod reduce-pvseq :default [m rfn pvseq]
+  (when (every? #(= m %) pvseq)
+    (reduce rfn pvseq)))
+                                        
+(defmethod reduce-pvseq :avg [m _ pvseq]
+  (when (every? #(= m %) pvseq)
+    (/ (reduce + (map value pvseq)) (count pvseq))))
+
+(defmethod reduce-pvseq :min [m _ pvseq]
+  (when (every? #(= m %) pvseq)
+    (apply min (map value pvseq))))
+
+(defmethod reduce-pvseq :max [m _ pvseq]
+  (when (every? #(= m %) pvseq)
+    (apply max (map value pvseq))))
+
+(defmethod reduce-pvseq :total [m _ pvseq]
+  (when (every? #(= m %) pvseq)
+    (apply max (map value pvseq))))
+
+(defn- mseq-ctor [coll dtval]
+  (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
+
+(defn- itv-ctor [mseq dtval]
+  (reify IInterval
+    (dtstart [this]
+      (when-let [f (first mseq)]
+        (dtval f)))
+    (duration [this]
+      (when-let [f (first mseq)]
+        (time/in-seconds
+         (time/interval (dtval f) (dtval (last mseq))))))))
+
+
+;; =============================================================================
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
