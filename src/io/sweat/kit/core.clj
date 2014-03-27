@@ -15,8 +15,6 @@
 
 (def sport-types #{:running :cycling})
 
-(def window-size 10000.0) ; Rolling operators' window size (10 seconds)
-
 ;; =============================================================================
 ;; Abstractions
 
@@ -175,28 +173,38 @@
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
    The reduce-pvseq multimethod provides a way to apply some default
-   reducers (:avg, :max, :min, :total), as well as using some other reducing fn"
+   reducers represented by keys, as well as using some other reducing fn.
+   The default reducers are: :avg, :savg, :max, :min, :total"
   (fn [m rfn pvseq]
     (when (every? #(= m (metric %)) pvseq)
       (if (keyword? rfn) rfn :fn))))
 
 (defmethod reduce-pvseq :fn [m rfn pvseq]
-  (reduce rfn pvseq))
-                                        
-(defmethod reduce-pvseq :avg [m rfn pvseq]
-  (/ (reduce + (map value pvseq)) (count pvseq)))
+  "Reduces the pvseq with rfn"
+  (reduce rfn pvseq))                                  
 
-(defmethod reduce-pvseq :mavg [m rfn pvseq]
+(defmethod reduce-pvseq :avg [m rfn pvseq]
+  "Applies a Simple Moving Average with linear interpolation, that works with
+   unevenly spaced time series (which is most likely the case).
+   It then averages the SMA values over time and returns that"
   (let [roll-vals (sma-lin pvseq window-size)]
     (/ (reduce + roll-vals) (count roll-vals))))
 
+(defmethod reduce-pvseq :savg [m rfn pvseq]
+  "Does a simple average over all the values "
+  (/ (reduce + (map value pvseq)) (count pvseq)))
+
 (defmethod reduce-pvseq :min [m _ pvseq]
+  "Returns the minimum value in the pvseq"
   (apply min (map value pvseq)))
 
 (defmethod reduce-pvseq :max [m _ pvseq]
+  "Returns the max value in the pvseq"
   (apply max (map value pvseq)))
 
 (defmethod reduce-pvseq :total [m _ pvseq]
+  "Returns the final (total) value for the pvseq.
+   Useful for accumulating metrics"
   (apply max (map value pvseq)))
 
 (defmethod reduce-pvseq :default [m rfn pvseq])
@@ -218,7 +226,7 @@
   (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
 
 (defn- itv-ctor
-  "Builds a interval for an IMeasured seq (mseq), using the dtval fn to apply
+  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to apply
    on each element"
   [mseq dtval]
   (reify IInterval
@@ -238,6 +246,8 @@
 ;; how to calculate rolling time series operators for unevenly spaced samples.
 ;; See "Algorithms for Unevenly Spaced Time Series: Moving Averages and
 ;; Other Rolling Operators", at http://www.eckner.com/papers/ts_alg.pdf
+
+(def ^:private window-size 10000.0) ; Rolling operators' window size (10 seconds)
 
 (defn- trapezoid
   "Helper fn for sma-lin. Calculates the area of the trapezoid with coordinates
@@ -285,8 +295,9 @@
 
 (defn- sma-lin
   "Simple Moving Average with linear interpolation, for time series with
-   unevenly spaced samples. It takes a PointValue seq and a parameter for 
-   window size in milliseconds"
+   unevenly spaced samples.
+   Takes a PointValue seq and a parameter for window size in milliseconds.
+   Returns a seq of values, corresponding to the SMAlin over time"
   [pvseq tau]
   (let [pnts (vec pvseq)
         n (count pnts)]
@@ -307,7 +318,7 @@
             (recur left-new left-area-new (inc right) roll-area-new out-new))
           out)))))
 
-
+;; =============================================================================
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
