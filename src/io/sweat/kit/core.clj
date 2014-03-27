@@ -240,7 +240,7 @@
 ;; Other Rolling Operators", at http://www.eckner.com/papers/ts_alg.pdf
 
 (defn- trapezoid
-  "Helper function that calculates the area of the trapezoid with coordinates
+  "Helper fn for sma-lin. Calculates the area of the trapezoid with coordinates
    of the corners (x2, 0), (x2, y2), (x3, 0), and (x3, y3), where y2 is 
    obtained by linear interpolation of (x1, y1) and (x3, y3) evaluated at x2"
   [x1 x2 x3 y1 y3]
@@ -251,7 +251,7 @@
       (/ (* (- x3 x2) (+ y2 y3)) 2))))
 
 (defn- expand-itv-right
-  ""
+  "Helper fn for sma-lin. Expands the window interval on right end"
   [pnts roll-area right]
   (+ roll-area (* (/ (+ (value (pnts (dec right)))
                         (value (pnts right)))
@@ -260,7 +260,7 @@
                      (tc/to-long (inst (pnts (dec right))))))))
 
 (defn- shrink-itv-left
-  ""
+  "Helper fn for sma-lin. Shrinks the window interval on left end"
   [pnts roll-area right left tau]
   (let [t-left-new (- (tc/to-long (inst (pnts right))) tau)]
     (loop [ra-new roll-area
@@ -275,8 +275,8 @@
                (inc left-new))))))
 
 (defn- inc-truncated-left
-  ""
-  [pnts roll-area t-left-new left]
+  "Helper fn for sma-lin. Adds truncated area on left end"
+  [pnts t-left-new left]
   (trapezoid (tc/to-long (inst (pnts (max 0 (dec left)))))
              t-left-new
              (tc/to-long (inst (pnts left)))
@@ -284,26 +284,25 @@
              (value (pnts left))))
 
 (defn- sma-lin
-  ""
+  "Simple Moving Average with linear interpolation, for time series with
+   unevenly spaced samples. It takes a PointValue seq and a parameter for 
+   window size in milliseconds"
   [pvseq tau]
   (let [pnts (vec pvseq)
         n (count pnts)]
-    (if (<= n 1)
+    (if (< n 2)
       (map value (seq pnts))
       (loop [left 0
-             left-area (* (value (pnts 1)) tau)
+             left-area (* (value (first pnts)) tau)
              right 1
              roll-area left-area
-             out (vector (value (pnts 1)))]
-;        (println left left-area right roll-area)
+             out (vector (value (first pnts)))]
         (if (< right n)
-          (let [roll-area-tmp (- (expand-itv-right pnts roll-area right)
-                                 left-area)
-                [t-left-new ra-new left-new] (shrink-itv-left
-                                              pnts roll-area-tmp right left tau)
-                left-area-new (inc-truncated-left 
-                               pnts roll-area-tmp t-left-new left-new)
-                roll-area-new (+ roll-area-tmp left-area-new)
+          (let [ra-tmp1 (- (expand-itv-right pnts roll-area right) left-area)
+                [t-left-new ra-tmp2 left-new] (shrink-itv-left
+                                               pnts ra-tmp1 right left tau)
+                left-area-new (inc-truncated-left pnts t-left-new left-new)
+                roll-area-new (+ ra-tmp2 left-area-new)
                 out-new (conj out (/ roll-area-new tau))]
             (recur left-new left-area-new (inc right) roll-area-new out-new))
           out)))))
@@ -321,4 +320,16 @@
   (mget s :distance :total)
   (mget s :altitude :max)
   (mget s :altitude :min)
-  (mget s :altitude :avg))
+  (mget s :altitude :avg)
+
+  (def vls  [{:time "2014-01-01T00:00:01.000Z" :value 0.0}
+             {:time "2014-01-01T00:00:01.540Z" :value 0.2}
+             {:time "2014-01-01T00:00:01.580Z" :value 0.4}
+             {:time "2014-01-01T00:00:02.010Z" :value 0.6}
+             {:time "2014-01-01T00:00:03.350Z" :value 0.8}
+             {:time "2014-01-01T00:00:05.280Z" :value 1.0}])
+
+  (def pvs  (for [v vls]
+              (->PointValue (:time v) (:value v) :speed)))
+  
+  )
