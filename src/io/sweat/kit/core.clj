@@ -3,10 +3,11 @@
             [clj-time.core :as time]
             [clj-time.coerce :as tc]))
 
-(declare itv-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin)
+(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin)
 
-;; =============================================================================
+;; -----------------------------------------------------------------------------
 ;; Vars
+;; =============================================================================
 
 (def metric-types
   #{:hr :power :cadence :steps :speed :distance :position :altitude :calories})
@@ -15,8 +16,9 @@
 
 (def sport-types #{:running :cycling})
 
-;; =============================================================================
+;; -----------------------------------------------------------------------------
 ;; Abstractions
+;; =============================================================================
 
 (defprotocol ISports
   "Something with a sequence of Sports"
@@ -42,61 +44,126 @@
   (value [this])
   (metric [this]))
 
-;; =============================================================================
+;; -----------------------------------------------------------------------------
 ;; Public API
+;; =============================================================================
 
-(defn measured? [x] (satisfies? IMeasured x))
+(defn measured?
+  "Tests if something implements the IMeasured interface"
+  [x]
+  (satisfies? IMeasured x))
 
-(defn point-val? [x] (satisfies? IPointValue x))
+(defn point-val?
+  "Tests if something implements the IPointValue interface"
+  [x]
+  (satisfies? IPointValue x))
 
 (defn acc-metric? 
   "Returns true for metrics whose point value is an accumulator 
    instead of a single reading (e.g. :distance and :calories vs :speed)"
   [m]
-  (contains? #{:distance :calories :steps}))
+  (contains? #{:distance :calories :steps} m))
 
+(defn splits
+  "Takes a measured object, an accumulator metric and the split value.
+   
+   If the metric is not an accumulator, or there's no track for it, this fn
+   returns nil.
 
-(defn splits [md & {:keys []}])
-;  (when (and  (tracked? md metric))
-;    (split-with #(< (value %) v) (track md metric))))
+   Otherwise, returns a seq of IMeasured objects, representing the split
+   intervals. Each interval will have a start/end point interpolated from 
+   the surrounding points. All other metrics are also split at this instant"
+  [md m v]
+  (letfn []
+    (when (and (measured? md) (acc-metric? m) (tracked? md m))
+      (loop [mtk (track md m)
+             acc v
+             sp []]
+        (if (empty? mtk)
+          sp
+          (let [cut (split-with #(<= (value %) acc) mtk)
+                x1 (last (first cut))
+                x3 (first (rest cut))
+                x2 (interpolate x1 x3 acc)]
+            (recur (cons x2 (rest cut))
+                   (+ acc v)
+                   (conj sp (cons x2 (first cut))))))))))
 
 (defn speed
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Speed track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :speed))
   ([md rfn] (mget md :speed rfn)))
 
 (defn pace
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Pace track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :pace))
   ([md rfn] (mget md :pace rfn)))
 
 (defn calories
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Calories track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or the :total keyword to get the
+   accumulated value"
   ([md] (track md :calories))
   ([md rfn] (mget md :calories rfn)))
 
 (defn altitude
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Altitude track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :altitude))
   ([md rfn] (mget md :altitude rfn)))
 
 (defn hr
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Heart Rate track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :hr))
   ([md rfn] (mget md :hr rfn)))
 
 (defn power
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Power track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :power))
   ([md rfn] (mget md :power rfn)))
 
 (defn cadence
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Cadence track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or one of these keywords for
+   standard behavior: :avg, :max, :min"
   ([md] (track md :cadence))
   ([md rfn] (mget md :cadence rfn)))
 
 (defn steps
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Steps track, otherwise, it returns a single value.
+   rfn can be any fn reducing point-vals or the :total keyword to get the
+   accumulated value"
   ([md] (track md :steps))
   ([md rfn] (mget md :steps rfn)))
 
 (defn distance
+  "Takes a measured object and an optional reducing fn. When the fn is not
+   given, yields the whole Distance track, otherwise it returns a single value.
+   rfn can be any fn reducing point-vals or the :total keyword to get the
+   accumulated value"
   ([md] (track md :distance))
   ([md rfn] (mget md :distance rfn)))
 
 (defmulti mseq
+  "Takes a collection of measured or point-val elements and returns a seq
+   implementing the IMeasured protocol, or 'mseq' as shorthand."
   (fn [coll] 
     (cond
      (every? measured? coll) :measured
@@ -114,7 +181,7 @@
       (metrics [this] (->> this (mapcat metrics) distinct))
       (track [this m] (mapcat #(track % m) this))
       (tracked? [this m] (not (empty? (track this m))))
-      (interval [_] (itv-ctor cs dtval))
+      (interval [_] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-mseq m rfn this)))))
 
 (defmethod mseq :point-val [coll]
@@ -127,33 +194,30 @@
       (metrics [this] (->> this (map metric) distinct))
       (track [this m] (filter #(= (metric %) m) this))
       (tracked? [this m] (not (empty? (track this m))))
-      (interval [this] (itv-ctor cs dtval))
+      (interval [this] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-pvseq m rfn this)))))
+
+(defn interpolate
+  "Takes two point-vals and an intermediate value. Yields a new point-val
+   with an interpolated instant for the given value"
+  [pv1 pv2 v]
+  (when (and (acc-metric? (metric pv1))
+             (acc-metric? (metric pv2)))
+    (->PointValue 
+     (tc/from-long
+      (Math/round
+       (float (+ (tc/to-long (inst pv1))
+                 (* (- (tc/to-long (inst pv2)) (tc/to-long (inst pv1)))
+                    (/ (- v (value pv1)) (- (value pv2) (value pv1)))))))
+      v)
+     (metric pv1))))
 
 ;; -----------------------------------------------------------------------------
 ;; Datatypes
-
-(defrecord PointValue [instant value metric]
-  IPointValue
-  (inst [this] instant)
-  (value [this] value)
-  (metric [this] metric))
-
-(defrecord Segment [dtstart duration sport active trigger annotations metrics]
-  IInterval
-  (dtstart [_] dtstart)
-  (duration [_] duration)
-  IMeasured
-  (metrics [this] (keys metrics))
-  (tracked? [this m] (not (empty? (track this m))))
-  (track [this m] (:track (m metrics)))
-  (interval [this] this)
-  (mget [this m rfn]
-    (if (tracked? this m)
-      (reduce-pvseq m rfn (track this m))
-      (when (keyword? rfn) (rfn (m metrics))))))
+;; =============================================================================
                                         
-(defrecord Activity [dtstart annotations segments]
+(defrecord Activity
+    [dtstart annotations segments]
   ISports
   (sports [this]
     (->> segments (map :sport) (remove nil?) distinct))
@@ -167,8 +231,31 @@
   (interval [this] this)
   (mget [_  m rfn] (mget (mseq segments) m rfn)))
 
-;; =============================================================================
+(defrecord Segment
+    [dtstart duration sport annotations metrics]
+  IInterval
+  (dtstart [_] dtstart)
+  (duration [_] duration)
+  IMeasured
+  (metrics [this] (keys metrics))
+  (tracked? [this m] (not (empty? (track this m))))
+  (track [this m] (:track (m metrics)))
+  (interval [this] this)
+  (mget [this m rfn]
+    (if (tracked? this m)
+      (reduce-pvseq m rfn (track this m))
+      (when (keyword? rfn) (rfn (m metrics))))))
+
+(defrecord PointValue
+    [instant value metric]
+  IPointValue
+  (inst [this] instant)
+  (value [this] value)
+  (metric [this] metric))
+
+;; -----------------------------------------------------------------------------
 ;; Private API
+;; =============================================================================
 
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
@@ -184,15 +271,12 @@
   (reduce rfn pvseq))                                  
 
 (defmethod reduce-pvseq :avg [m rfn pvseq]
-  "Applies a Simple Moving Average with linear interpolation, that works with
-   unevenly spaced time series (which is most likely the case).
+  "Applies a Simple Moving Average with linear interpolation, that works 
+   with unevenly spaced time series (which is most likely the case).
    It then averages the SMA values over time and returns that"
-  (let [roll-vals (sma-lin pvseq window-size)]
+  (let [window-size 60000.0 ; (60 seconds)
+        roll-vals (sma-lin pvseq window-size)]
     (/ (reduce + roll-vals) (count roll-vals))))
-
-(defmethod reduce-pvseq :savg [m rfn pvseq]
-  "Does a simple average over all the values "
-  (/ (reduce + (map value pvseq)) (count pvseq)))
 
 (defmethod reduce-pvseq :min [m _ pvseq]
   "Returns the minimum value in the pvseq"
@@ -209,10 +293,11 @@
 
 (defmethod reduce-pvseq :default [m rfn pvseq])
 
-(defn- reduce-mseq [m rfn mseq]
+(defn- reduce-mseq 
   "IMeasured seqs can be reduced. This fn takes a metric, a reducing fn and
-   the mseq. The thing to take note is that any metric that don't exist for
-   one elem will be treated as if the item did not exist"
+   the mseq. The thing to take note is that any metric that doesn't exist for
+   one elem will be treated as if the item did not exist in the seq"
+  [m rfn mseq]
   (reduce-pvseq
    m rfn (remove nil?
                  (map #(when-let [v (mget % m rfn)]
@@ -225,9 +310,10 @@
   [coll dtval]
   (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
 
-(defn- itv-ctor
-  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to apply
-   on each element"
+(defn- interval-ctor
+  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to
+   get an element's DateTime. This function assumes the seq is already
+   sorted"
   [mseq dtval]
   (reify IInterval
     (dtstart [this]
@@ -238,87 +324,71 @@
         (time/in-seconds
          (time/interval (dtval f) (dtval (last mseq))))))))
 
-
-;; =============================================================================
-;; Simple Moving Average
-;;
-;; These fns are implemented based on Andreas Eckner's work describing
-;; how to calculate rolling time series operators for unevenly spaced samples.
-;; See "Algorithms for Unevenly Spaced Time Series: Moving Averages and
-;; Other Rolling Operators", at http://www.eckner.com/papers/ts_alg.pdf
-
-(def ^:private window-size 10000.0) ; Rolling operators' window size (10 seconds)
-
-(defn- trapezoid
-  "Helper fn for sma-lin. Calculates the area of the trapezoid with coordinates
-   of the corners (x2, 0), (x2, y2), (x3, 0), and (x3, y3), where y2 is 
-   obtained by linear interpolation of (x1, y1) and (x3, y3) evaluated at x2"
-  [x1 x2 x3 y1 y3]
-  (if (or (= x2 x3) (< x2 x1))
-    (* (- x3 x2) y1)
-    (let [w (/ (- x3 x2) (- x3 x1))
-          y2 (+ (* y1 w) (* y3 (- 1 w)))]
-      (/ (* (- x3 x2) (+ y2 y3)) 2))))
-
-(defn- expand-itv-right
-  "Helper fn for sma-lin. Expands the window interval on right end"
-  [pnts roll-area right]
-  (+ roll-area (* (/ (+ (value (pnts (dec right)))
-                        (value (pnts right)))
-                     2)
-                  (- (tc/to-long (inst (pnts right)))
-                     (tc/to-long (inst (pnts (dec right))))))))
-
-(defn- shrink-itv-left
-  "Helper fn for sma-lin. Shrinks the window interval on left end"
-  [pnts roll-area right left tau]
-  (let [t-left-new (- (tc/to-long (inst (pnts right))) tau)]
-    (loop [ra-new roll-area
-           left-new left]
-      (if (> (tc/to-long (inst (pnts left-new))) t-left-new)
-        [t-left-new ra-new left-new]
-        (recur (- ra-new (* (/ (+ (value (pnts left-new))
-                                  (value (pnts (inc left-new))))
-                               2)
-                            (- (tc/to-long (inst (pnts (inc left-new))))
-                               (tc/to-long (inst (pnts left-new))))))
-               (inc left-new))))))
-
-(defn- inc-truncated-left
-  "Helper fn for sma-lin. Adds truncated area on left end"
-  [pnts t-left-new left]
-  (trapezoid (tc/to-long (inst (pnts (max 0 (dec left)))))
-             t-left-new
-             (tc/to-long (inst (pnts left)))
-             (value (pnts (max 0 (dec left))))
-             (value (pnts left))))
-
 (defn- sma-lin
-  "Simple Moving Average with linear interpolation, for time series with
-   unevenly spaced samples.
+  "Simple Moving Average with linear interpolation.
    Takes a PointValue seq and a parameter for window size in milliseconds.
-   Returns a seq of values, corresponding to the SMAlin over time"
-  [pvseq tau]
-  (let [pnts (vec pvseq)
-        n (count pnts)]
-    (if (< n 2)
-      (map value (seq pnts))
-      (loop [left 0
-             left-area (* (value (first pnts)) tau)
-             right 1
-             roll-area left-area
-             out (vector (value (first pnts)))]
-        (if (< right n)
-          (let [ra-tmp1 (- (expand-itv-right pnts roll-area right) left-area)
-                [t-left-new ra-tmp2 left-new] (shrink-itv-left
-                                               pnts ra-tmp1 right left tau)
-                left-area-new (inc-truncated-left pnts t-left-new left-new)
-                roll-area-new (+ ra-tmp2 left-area-new)
-                out-new (conj out (/ roll-area-new tau))]
-            (recur left-new left-area-new (inc right) roll-area-new out-new))
-          out)))))
+   Returns a seq of values, corresponding to the SMAlin over time.
 
-;; =============================================================================
+   It's implemented based on Andreas Eckner's work describing how to
+   calculate rolling time series operators for unevenly spaced samples.
+   See: \"Algorithms for Unevenly Spaced Time Series: Moving Averages and
+   Other Rolling Operators\", at http://www.eckner.com/papers/ts_alg.pdf"
+  [pvseq tau]
+  (letfn [(trapezoid [x1 x2 x3 y1 y3]
+            (if (or (= x2 x3) (< x2 x1))
+              (* (- x3 x2) y1)
+              (let [w (/ (- x3 x2) (- x3 x1))
+                    y2 (+ (* y1 w) (* y3 (- 1 w)))]
+                (/ (* (- x3 x2) (+ y2 y3)) 2))))
+
+          (expand-itv-right [pnts roll-area right]
+            (+ roll-area (* (/ (+ (value (pnts (dec right)))
+                                  (value (pnts right)))
+                               2)
+                            (- (tc/to-long (inst (pnts right)))
+                               (tc/to-long (inst (pnts (dec right))))))))
+          
+          (shrink-itv-left [pnts roll-area right left tau]
+            (let [t-left-new (- (tc/to-long (inst (pnts right))) tau)]
+              (loop [ra-new roll-area
+                     left-new left]
+                (if (> (tc/to-long (inst (pnts left-new))) t-left-new)
+                  [t-left-new ra-new left-new]
+                  (recur (- ra-new (* (/ (+ (value (pnts left-new))
+                                            (value (pnts (inc left-new))))
+                                         2)
+                                      (- (tc/to-long (inst (pnts (inc left-new))))
+                                         (tc/to-long (inst (pnts left-new))))))
+                         (inc left-new))))))
+
+          (inc-truncated-left [pnts t-left-new left]
+            (trapezoid (tc/to-long (inst (pnts (max 0 (dec left)))))
+                       t-left-new
+                       (tc/to-long (inst (pnts left)))
+                       (value (pnts (max 0 (dec left))))
+                       (value (pnts left))))]
+
+    ; Main body
+    (let [pnts (vec pvseq)
+          n (count pnts)]
+      (if (< n 2)
+        (map value (seq pnts))
+        (loop [left 0
+               left-area (* (value (first pnts)) tau)
+               right 1
+               roll-area left-area
+               out (vector (value (first pnts)))]
+          (if (< right n)
+            (let [ra-tmp1 (- (expand-itv-right pnts roll-area right) left-area)
+                  [t-left-new ra-tmp2 left-new] (shrink-itv-left
+                                                 pnts ra-tmp1 right left tau)
+                  left-area-new (inc-truncated-left pnts t-left-new left-new)
+                  roll-area-new (+ ra-tmp2 left-area-new)
+                  out-new (conj out (/ roll-area-new tau))]
+              (recur left-new left-area-new (inc right) roll-area-new out-new))
+            out))))))
+
+;; -----------------------------------------------------------------------------
 
 (comment
   (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
