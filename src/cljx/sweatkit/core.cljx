@@ -1,9 +1,10 @@
-(ns io.sweat.kit.core
-  (:require [clojure.set :as st]
-            [clj-time.core :as time]
-            [clj-time.coerce :as tc]))
+(ns sweatkit.core
+  (:require       [clojure.set :as st]
+            #+clj [clj-time.core :as time]
+            #+clj [clj-time.coerce :as tc]))
 
-(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin)
+(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin
+         ->PointValue interpolate inst-to-long inst-from-long)
 
 ;; -----------------------------------------------------------------------------
 ;; Vars
@@ -63,6 +64,21 @@
    instead of a single reading (e.g. :distance and :calories vs :speed)"
   [m]
   (contains? #{:distance :calories :steps} m))
+
+(defn interpolate
+  "Takes two point-vals and an intermediate value. Yields a new point-val
+   with an interpolated instant for the given value"
+  [pv1 pv2 v]
+  (when (and (acc-metric? (metric pv1))
+             (acc-metric? (metric pv2)))
+    (->PointValue 
+     (inst-from-long
+      (Math/round
+       (float (+ (inst-to-long (inst pv1))
+                 (* (- (inst-to-long (inst pv2)) (inst-to-long (inst pv1)))
+                    (/ (- v (value pv1)) (- (value pv2) (value pv1)))))))
+      v)
+     (metric pv1))))
 
 (defn splits
   "Takes a measured object, an accumulator metric and the split value.
@@ -175,8 +191,10 @@
   (let [dtval #(dtstart (interval %))
         cs (sseq-ctor coll dtval)]
     (reify
-      clojure.lang.Seqable
-      (seq [this] cs)
+      #+clj  clojure.lang.Seqable
+      #+clj  (seq [this] cs)
+      #+cljs ISeqable
+      #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (mapcat metrics) distinct))
       (track [this m] (mapcat #(track % m) this))
@@ -188,29 +206,16 @@
   (let [dtval #(inst %)
         cs (sseq-ctor coll dtval)]
     (reify
-      clojure.lang.Seqable
-      (seq [this] cs)
+      #+clj  clojure.lang.Seqable
+      #+clj  (seq [this] cs)
+      #+cljs ISeqable
+      #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (map metric) distinct))
       (track [this m] (filter #(= (metric %) m) this))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [this] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-pvseq m rfn this)))))
-
-(defn interpolate
-  "Takes two point-vals and an intermediate value. Yields a new point-val
-   with an interpolated instant for the given value"
-  [pv1 pv2 v]
-  (when (and (acc-metric? (metric pv1))
-             (acc-metric? (metric pv2)))
-    (->PointValue 
-     (tc/from-long
-      (Math/round
-       (float (+ (tc/to-long (inst pv1))
-                 (* (- (tc/to-long (inst pv2)) (tc/to-long (inst pv1)))
-                    (/ (- v (value pv1)) (- (value pv2) (value pv1)))))))
-      v)
-     (metric pv1))))
 
 ;; -----------------------------------------------------------------------------
 ;; Datatypes
@@ -256,6 +261,27 @@
 ;; -----------------------------------------------------------------------------
 ;; Private API
 ;; =============================================================================
+
+(defn- inst-to-long
+  "Takes an instant and returns a long representing the millis since the epoch"
+  [i]
+  #+clj (tc/to-long i))
+
+(defn- inst-from-long
+  "Takes a long (millis since epoch) and returns a instant"
+  [l]
+  #+clj (tc/from-long))
+
+(defn- dt-interval
+  "Takes two DateTime objects and returns an Interval betweeen them"
+  [dtstart dtend]
+  #+clj (time/interval dtstart dtend))
+
+(defn itv-to-secs
+  "Takes an Interval and returns its duration, in seconds"
+  [interval]
+  #+clj (time/in-seconds interval))
+
 
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
@@ -321,8 +347,8 @@
         (dtval f)))
     (duration [this]
       (when-let [f (first mseq)]
-        (time/in-seconds
-         (time/interval (dtval f) (dtval (last mseq))))))))
+        (itv-to-secs
+         (dt-interval (dtval f) (dtval (last mseq))))))))
 
 (defn- sma-lin
   "Simple Moving Average with linear interpolation.
@@ -345,26 +371,26 @@
             (+ roll-area (* (/ (+ (value (pnts (dec right)))
                                   (value (pnts right)))
                                2)
-                            (- (tc/to-long (inst (pnts right)))
-                               (tc/to-long (inst (pnts (dec right))))))))
+                            (- (inst-to-long (inst (pnts right)))
+                               (inst-to-long (inst (pnts (dec right))))))))
           
           (shrink-itv-left [pnts roll-area right left tau]
-            (let [t-left-new (- (tc/to-long (inst (pnts right))) tau)]
+            (let [t-left-new (- (inst-to-long (inst (pnts right))) tau)]
               (loop [ra-new roll-area
                      left-new left]
-                (if (> (tc/to-long (inst (pnts left-new))) t-left-new)
+                (if (> (inst-to-long (inst (pnts left-new))) t-left-new)
                   [t-left-new ra-new left-new]
                   (recur (- ra-new (* (/ (+ (value (pnts left-new))
                                             (value (pnts (inc left-new))))
                                          2)
-                                      (- (tc/to-long (inst (pnts (inc left-new))))
-                                         (tc/to-long (inst (pnts left-new))))))
+                                      (- (inst-to-long (inst (pnts (inc left-new))))
+                                         (inst-to-long (inst (pnts left-new))))))
                          (inc left-new))))))
 
           (inc-truncated-left [pnts t-left-new left]
-            (trapezoid (tc/to-long (inst (pnts (max 0 (dec left)))))
+            (trapezoid (inst-to-long (inst (pnts (max 0 (dec left)))))
                        t-left-new
-                       (tc/to-long (inst (pnts left)))
+                       (inst-to-long (inst (pnts left)))
                        (value (pnts (max 0 (dec left))))
                        (value (pnts left))))]
 
@@ -387,30 +413,3 @@
                   out-new (conj out (/ roll-area-new tau))]
               (recur left-new left-area-new (inc right) roll-area-new out-new))
             out))))))
-
-;; -----------------------------------------------------------------------------
-
-(comment
-  (def r (clojure.java.io/file "test-resources/FitnessHistoryDetail.tcx"))
-  (def p (io.sweat.kit.parse.tcx/parse (.getPath r)))
-  (def a (first (:activities p)))
-  (def s (first (:segments a)))
-  (sports a)
-  (metrics a)
-  (def sgmts (:segments a))
-  (mget s :distance :total)
-  (mget s :altitude :max)
-  (mget s :altitude :min)
-  (mget s :altitude :avg)
-
-  (def vls  [{:time "2014-01-01T00:00:01.000Z" :value 0.0}
-             {:time "2014-01-01T00:00:01.540Z" :value 0.2}
-             {:time "2014-01-01T00:00:01.580Z" :value 0.4}
-             {:time "2014-01-01T00:00:02.010Z" :value 0.6}
-             {:time "2014-01-01T00:00:03.350Z" :value 0.8}
-             {:time "2014-01-01T00:00:05.280Z" :value 1.0}])
-
-  (def pvs  (for [v vls]
-              (->PointValue (:time v) (:value v) :speed)))
-  
-  )

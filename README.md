@@ -1,18 +1,15 @@
-# SweatKit
+# sweatkit
 
-SweatKit is a Clojure library to work with fitness data.
+sweatkit is a Clojure(Script) library to work with sports activities data.
+
+The main idea behind sweatkit is that this kind of data is a fundamentally composable thing. By this we mean that you should be able to get the same sort of information out of a few minutes of training, whole segments/laps, a single activity or collections of activities.
+
+## Documentation
 
 ## Usage
-
-This is still very much a work in progress and without a stable API. 
 
 ## License
 
 Copyright © 2014 Daniel Zacarias
 
-Distributed under the Eclipse Public License 1.0 which can be found in the file [LICENSE](LICENSE) at the root of this distribution.
-
-By using this software in any fashion, you are agreeing to be bound by
-the terms of this license.
-
-You must not remove this notice, or any other, from this software.
+Distributed under the [Eclipse Public License 1.0](LICENSE). By using this software in any fashion, you are agreeing to be bound by the terms of this license.
