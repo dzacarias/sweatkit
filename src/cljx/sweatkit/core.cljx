@@ -1,10 +1,9 @@
 (ns sweatkit.core
-  (:require       [clojure.set :as st]
-            #+clj [clj-time.core :as time]
-            #+clj [clj-time.coerce :as tc]))
-
-(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin
-         ->PointValue interpolate inst-to-long inst-from-long)
+  (:require  [clojure.set :as st]
+      #+clj  [clj-time.core :as time]
+      #+cljs [cljs-time.core :as time]
+      #+clj  [clj-time.coerce :as tc]
+      #+cljs [cljs-time.coerce :as tc]))
 
 ;; -----------------------------------------------------------------------------
 ;; Vars
@@ -49,6 +48,9 @@
 ;; Public API
 ;; =============================================================================
 
+(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin
+         ->PointValue interpolate)
+
 (defn measured?
   "Tests if something implements the IMeasured interface"
   [x]
@@ -72,12 +74,12 @@
   (when (and (acc-metric? (metric pv1))
              (acc-metric? (metric pv2)))
     (->PointValue 
-     (inst-from-long
+     (tc/from-long
       (Math/round
-       (float (+ (inst-to-long (inst pv1))
-                 (* (- (inst-to-long (inst pv2)) (inst-to-long (inst pv1)))
-                    (/ (- v (value pv1)) (- (value pv2) (value pv1)))))))
-      v)
+       (float (+ (tc/to-long (inst pv1))
+                 (* (- (tc/to-long (inst pv2)) (tc/to-long (inst pv1)))
+                    (/ (- v (value pv1)) (- (value pv2) (value pv1))))))))
+     v
      (metric pv1))))
 
 (defn splits
@@ -262,27 +264,6 @@
 ;; Private API
 ;; =============================================================================
 
-(defn- inst-to-long
-  "Takes an instant and returns a long representing the millis since the epoch"
-  [i]
-  #+clj (tc/to-long i))
-
-(defn- inst-from-long
-  "Takes a long (millis since epoch) and returns a instant"
-  [l]
-  #+clj (tc/from-long))
-
-(defn- dt-interval
-  "Takes two DateTime objects and returns an Interval betweeen them"
-  [dtstart dtend]
-  #+clj (time/interval dtstart dtend))
-
-(defn itv-to-secs
-  "Takes an Interval and returns its duration, in seconds"
-  [interval]
-  #+clj (time/in-seconds interval))
-
-
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
    The reduce-pvseq multimethod provides a way to apply some default
@@ -347,8 +328,8 @@
         (dtval f)))
     (duration [this]
       (when-let [f (first mseq)]
-        (itv-to-secs
-         (dt-interval (dtval f) (dtval (last mseq))))))))
+        (time/in-seconds
+         (time/interval (dtval f) (dtval (last mseq))))))))
 
 (defn- sma-lin
   "Simple Moving Average with linear interpolation.
@@ -371,26 +352,26 @@
             (+ roll-area (* (/ (+ (value (pnts (dec right)))
                                   (value (pnts right)))
                                2)
-                            (- (inst-to-long (inst (pnts right)))
-                               (inst-to-long (inst (pnts (dec right))))))))
+                            (- (tc/to-long (inst (pnts right)))
+                               (tc/to-long (inst (pnts (dec right))))))))
           
           (shrink-itv-left [pnts roll-area right left tau]
-            (let [t-left-new (- (inst-to-long (inst (pnts right))) tau)]
+            (let [t-left-new (- (tc/to-long (inst (pnts right))) tau)]
               (loop [ra-new roll-area
                      left-new left]
-                (if (> (inst-to-long (inst (pnts left-new))) t-left-new)
+                (if (> (tc/to-long (inst (pnts left-new))) t-left-new)
                   [t-left-new ra-new left-new]
                   (recur (- ra-new (* (/ (+ (value (pnts left-new))
                                             (value (pnts (inc left-new))))
                                          2)
-                                      (- (inst-to-long (inst (pnts (inc left-new))))
-                                         (inst-to-long (inst (pnts left-new))))))
+                                      (- (tc/to-long (inst (pnts (inc left-new))))
+                                         (tc/to-long (inst (pnts left-new))))))
                          (inc left-new))))))
 
           (inc-truncated-left [pnts t-left-new left]
-            (trapezoid (inst-to-long (inst (pnts (max 0 (dec left)))))
+            (trapezoid (tc/to-long (inst (pnts (max 0 (dec left)))))
                        t-left-new
-                       (inst-to-long (inst (pnts left)))
+                       (tc/to-long (inst (pnts left)))
                        (value (pnts (max 0 (dec left))))
                        (value (pnts left))))]
 

@@ -1,12 +1,14 @@
 (defproject sweatkit "0.1.0-SNAPSHOT"
-  :description "A Clojure(Script) library to work with fitness data"
+  :description "A Clojure(Script) library to work with sports activities data"
   :url "https://github.com/dzacarias/sweatkit"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.clojure/clojurescript "0.0-2202"]
                  [org.clojure/data.zip "0.1.1"]
-                 [clj-time "0.6.0"]]
+                 [clj-time "0.6.0"]
+                 [com.andrewmcveigh/cljs-time "0.1.1"]]
 
   :cljx {:builds [{:source-paths ["src/cljx"]
                    :output-path "target/classes"
@@ -34,8 +36,7 @@
                                    :optimizations :advanced
                                    :pretty-print true}}]}
 
-  :profiles {:dev {:dependencies [[org.clojure/clojurescript "0.0-2202"]]
-                   :plugins [[com.keminglabs/cljx "0.3.2"]
+  :profiles {:dev {:plugins [[com.keminglabs/cljx "0.3.2"]
                              [lein-cljsbuild "1.0.3"]
                              [com.cemerick/clojurescript.test "0.3.0"]
                              [com.cemerick/austin "0.1.4"]]
