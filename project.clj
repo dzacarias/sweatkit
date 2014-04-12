@@ -34,9 +34,11 @@
               :builds [{:source-paths ["target/classes" "target/test-classes"]
                         :compiler {:output-to "target/testable.js"
                                    :optimizations :advanced
-                                   :pretty-print true}}]}
+                                   :pretty-print true
+                                   :libs [""]}}]}
 
-  :profiles {:dev {:plugins [[com.keminglabs/cljx "0.3.2"]
+  :profiles {:dev {:dependencies [[com.cemerick/double-check "0.5.7-SNAPSHOT"]]
+                   :plugins [[com.keminglabs/cljx "0.3.2"]
                              [lein-cljsbuild "1.0.3"]
                              [com.cemerick/clojurescript.test "0.3.0"]
                              [com.cemerick/austin "0.1.4"]]

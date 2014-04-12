@@ -45,19 +45,61 @@
   (metric [this]))
 
 ;; -----------------------------------------------------------------------------
+;; Datatypes
+;; =============================================================================
+
+(declare reduce-pvseq)
+
+(defrecord Activity
+    [dtstart annotations segments]
+  ISports
+  (sports [this]
+    (->> segments (map :sport) (remove nil?) distinct))
+  IInterval
+  (dtstart [this] dtstart)
+  (duration [this] (->> segments (map duration) (reduce +)))
+  IMeasured
+  (metrics [_] (metrics segments))
+  (tracked? [_ m] (tracked? segments m))
+  (track [_ m] (track segments m))
+  (interval [this] this)
+  (mget [_  m rfn] (mget segments m rfn)))
+
+(defrecord Segment
+    [dtstart duration sport annotations metrics]
+  IInterval
+  (dtstart [_] dtstart)
+  (duration [_] duration)
+  IMeasured
+  (metrics [this] (keys metrics))
+  (tracked? [this m] (not (empty? (track this m))))
+  (track [this m] (:track (m metrics)))
+  (interval [this] this)
+  (mget [this m rfn]
+    (if (tracked? this m)
+      (reduce-pvseq m rfn (track this m))
+      (when (keyword? rfn) (rfn (m metrics))))))
+
+(defrecord PointValue
+    [instant value metric]
+  IPointValue
+  (inst [this] instant)
+  (value [this] value)
+  (metric [this] metric))
+
+;; -----------------------------------------------------------------------------
 ;; Public API
 ;; =============================================================================
 
-(declare interval-ctor sseq-ctor reduce-pvseq reduce-mseq mseq sma-lin
-         ->PointValue interpolate)
+(declare interval-ctor sseq-ctor reduce-mseq mseq sma-lin)
 
 (defn measured?
-  "Tests if something implements the IMeasured interface"
+  "Tests if x implements the IMeasured interface"
   [x]
   (satisfies? IMeasured x))
 
 (defn point-val?
-  "Tests if something implements the IPointValue interface"
+  "Tests if x implements the IPointValue interface"
   [x]
   (satisfies? IPointValue x))
 
@@ -68,17 +110,21 @@
   (contains? #{:distance :calories :steps} m))
 
 (defn interpolate
-  "Takes two point-vals and an intermediate value. Yields a new point-val
-   with an interpolated instant for the given value"
+  "Takes two point-vals and an intermediate value. Yields a new
+   point-val with an interpolated instant for the given value, if both
+   points are non-nil."
   [pv1 pv2 v]
-  (when (and (acc-metric? (metric pv1))
+  (when (and (not (nil? pv1)) (not (nil? pv2))
+             (acc-metric? (metric pv1))
              (acc-metric? (metric pv2)))
     (->PointValue 
      (tc/from-long
       (Math/round
-       (float (+ (tc/to-long (inst pv1))
-                 (* (- (tc/to-long (inst pv2)) (tc/to-long (inst pv1)))
-                    (/ (- v (value pv1)) (- (value pv2) (value pv1))))))))
+       (double (+ (tc/to-long (inst pv1))
+                  (* (- (tc/to-long (inst pv2))
+                        (tc/to-long (inst pv1)))
+                     (/ (- v (value pv1))
+                        (- (value pv2) (value pv1))))))))
      v
      (metric pv1))))
 
@@ -92,20 +138,13 @@
    intervals. Each interval will have a start/end point interpolated from 
    the surrounding points. All other metrics are also split at this instant"
   [md m v]
-  (letfn []
-    (when (and (measured? md) (acc-metric? m) (tracked? md m))
-      (loop [mtk (track md m)
-             acc v
-             sp []]
-        (if (empty? mtk)
-          sp
-          (let [cut (split-with #(<= (value %) acc) mtk)
-                x1 (last (first cut))
-                x3 (first (rest cut))
-                x2 (interpolate x1 x3 acc)]
-            (recur (cons x2 (rest cut))
-                   (+ acc v)
-                   (conj sp (cons x2 (first cut))))))))))
+  (when (and (measured? md) (acc-metric? m) (tracked? md m))
+    (loop [mtk (vec (track md m)), acc v, sp []]
+      (let [[under over] (split-with #(<= (value %) acc) mtk)
+            x (interpolate (last under) (first over) acc)]
+          (if (empty? over)
+            (map mseq (conj sp under))
+            (recur (cons x over) (+ acc v) (conj sp (cons x under))))))))
 
 (defn speed
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -120,6 +159,7 @@
    given, yields the whole Pace track, otherwise it returns a single value.
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
+  ;; TODO in case this track does not exist, try to calculate it from :speed
   ([md] (track md :pace))
   ([md rfn] (mget md :pace rfn)))
 
@@ -175,17 +215,22 @@
   "Takes a measured object and an optional reducing fn. When the fn is not
    given, yields the whole Distance track, otherwise it returns a single value.
    rfn can be any fn reducing point-vals or the :total keyword to get the
-   accumulated value"
+   accumulated value.
+   N.B: As of now, this metric will not use the geo track to calculate distance.
+        Only tracks that provide this metric directly are considered (this might
+        change in the future)"
   ([md] (track md :distance))
   ([md rfn] (mget md :distance rfn)))
 
 (defmulti mseq
-  "Takes a collection of measured or point-val elements and returns a seq
-   implementing the IMeasured protocol, or 'mseq' as shorthand."
-  (fn [coll] 
-    (cond
-     (every? measured? coll) :measured
-     (every? point-val? coll) :point-val)))
+  "Takes a coll of measured or point-val elements and returns a sorted
+   seq (by time), implementing the IMeasured protocol, or 'mseq' as shorthand.
+   If coll is not at a coll or it's empty, it returns nil"
+  (fn [coll]
+    (when (and (coll? coll) (not (empty? coll)))
+      (cond
+       (every? measured? coll) :measured
+       (every? point-val? coll) :point-val))))
 
 (defmethod mseq :default [_])
 
@@ -219,46 +264,60 @@
       (interval [this] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-pvseq m rfn this)))))
 
-;; -----------------------------------------------------------------------------
-;; Datatypes
-;; =============================================================================
-                                        
-(defrecord Activity
-    [dtstart annotations segments]
-  ISports
-  (sports [this]
-    (->> segments (map :sport) (remove nil?) distinct))
-  IInterval
-  (dtstart [this] dtstart)
-  (duration [this] (->> segments (map duration) (reduce +)))
-  IMeasured
-  (metrics [_] (metrics (mseq segments)))
-  (tracked? [_ m] (tracked? (mseq segments) m))
-  (track [_ m] (track (mseq segments) m))
-  (interval [this] this)
-  (mget [_  m rfn] (mget (mseq segments) m rfn)))
+(defn valid-sweat?
+  "Takes a data structure and checks if it conforms to sweatkit's format:
+   A map with these keys and values:
+    :activities => collection of maps like this:
+        :dtstart => DateTime, starting instant
+        :annotations => Map with relevant annotations
+        :segments => collection of maps like this:
+           :dtstart => Starting instant (DateTime)
+           :duration => Number of milliseconds (Integer)
+           :active => Was this an active period? (Boolean)
+           :trigger => What caused this segment? (An element from trigger-types)
+           :annotations => Map with relevant annotations
+           :metrics => Map with keys corresponding to metric-types,
+                       each of its values a map like this:
+             :avg => Average value for this metric
+             :max => Max value for this metric
+             :min => Min value for this metric
+             :total => Total value for this metric
+             :track => Seq of individual readings, each like this:
+                 :instant => Reading instant (DateTime)
+                 :<metric> (key corresponding to the metric-type) => <value>"
+  [in]
+  ;; TODO - use prismatic/schema for this
+  true)
 
-(defrecord Segment
-    [dtstart duration sport annotations metrics]
-  IInterval
-  (dtstart [_] dtstart)
-  (duration [_] duration)
-  IMeasured
-  (metrics [this] (keys metrics))
-  (tracked? [this m] (not (empty? (track this m))))
-  (track [this m] (:track (m metrics)))
-  (interval [this] this)
-  (mget [this m rfn]
-    (if (tracked? this m)
-      (reduce-pvseq m rfn (track this m))
-      (when (keyword? rfn) (rfn (m metrics))))))
 
-(defrecord PointValue
-    [instant value metric]
-  IPointValue
-  (inst [this] instant)
-  (value [this] value)
-  (metric [this] metric))
+(defn build
+  "Takes a data structure as checked by valid-sweat? and yields a mostly
+   identical new one, with the following features:
+     * The :activities coll is turned into an mseq (sorted IMeasured) and its
+       elements are also IMeasured (via Activity record)
+     * The :segments coll in each Activity is also made an mseq, with each of 
+       elements also becoming IMeasured (via Segment record) 
+     * All metric tracks are also made mseqs and their items made IPointValues
+       record"
+  [in]
+  (letfn [(point-val [pv m]
+            (map->PointValue
+             {:instant (:instant pv), :value (m pv), :metric m}))
+          (metric [m v]
+            {m 
+             (merge v (when-let [t (mseq (map #(point-val % m) (:track v)))]
+                        {:track t}))})
+          (segment [s]
+            (map->Segment
+             (merge s {:metrics
+                       (apply merge (for [[m v] (:metrics s)]
+                                      (metric m v)))})))
+          (activity [a]
+            (map->Activity
+             (merge a {:segments (mseq (map segment (:segments a)))})))]
+
+    (when (valid-sweat? in)
+      {:activities (mseq (map activity (:activities in)))})))
 
 ;; -----------------------------------------------------------------------------
 ;; Private API
@@ -376,7 +435,7 @@
                        (value (pnts left))))]
 
     ; Main body
-    (let [pnts (vec pvseq)
+    (let [pnts (vec (seq pvseq))
           n (count pnts)]
       (if (< n 2)
         (map value (seq pnts))

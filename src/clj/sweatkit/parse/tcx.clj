@@ -54,8 +54,7 @@
    "Resting" :resting})
 
 (defn- get-track [tks metric]
-  (map #(sk/->PointValue (:instant %) (metric %) metric)
-       (filter metric tks)))
+  (filter metric tks))
 
 (defn- get-metric [metric tks loc]
   "Takes a metric, a seq of trackpoints and a starting loc (as per c.zip).
@@ -66,25 +65,20 @@
           (condp = metric
             :distance
             (when-let [t (xml1->double loc :DistanceMeters)] {:total t})
-
             :calories
             (when-let [t (xml1->int loc :Calories)] {:total t})
-
             :steps
             (when-let [t (xml1->int loc :Extensions :LX :Steps)] {:total t})
-            
             :hr
             (merge (when-let [a (xml1->int loc :AverageHeartRateBpm :Value)]
                      {:avg a})
                    (when-let [m (xml1->int loc :MaximumHeartRateBpm :Value)]
                      {:max m}))
-
             :speed
             (merge (when-let [a (xml1->double loc :Extensions :LX :AvgSpeed)]
                      {:avg a})
                    (when-let [m (xml1->double loc :MaximumSpeed)]
                      {:max m}))
-
             :cadence
             (merge (when-let [a (or (xml1->int loc
                                                :Cadence)
@@ -96,7 +90,6 @@
                                     (xml1->int loc
                                                :Extensions :LX :MaxRunCadence))]
                      {:max m}))
-            
             :power
             (merge (when-let [a (xml1->int loc :Extensions :p1:AverageWatts)]
                      {:avg a})
@@ -121,9 +114,8 @@
   {:dtstart (xml1->inst act :Id)
    :annotations {:notes (xml1->text act :Notes)}
    :segments (for [lap (xml-> act :Lap)]
-               (sk/map->Segment
-                (merge {:sport (get sports (attr act :Sport))}
-                       (parse-loc lap))))})
+               (merge {:sport (get sports (attr act :Sport))}
+                      (parse-loc lap)))})
 
 (defmethod parse-loc :Lap [lap]
   "Parses Lap elements, returning a map representing a sweatkit Segment"
@@ -172,4 +164,4 @@
    Returns a map in sweatkit format representing the parsed input"
   (let [z (tcx-zip tcx)]
     {:activities (for [act (xml-> z :Activities :Activity)] 
-                   (sk/map->Activity (parse-loc act)))}))
+                   (parse-loc act))}))
