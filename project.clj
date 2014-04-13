@@ -8,7 +8,8 @@
                  [org.clojure/clojurescript "0.0-2202"]
                  [org.clojure/data.zip "0.1.1"]
                  [clj-time "0.6.0"]
-                 [com.andrewmcveigh/cljs-time "0.1.1"]]
+                 [com.andrewmcveigh/cljs-time "0.1.1"]
+                 [prismatic/schema "0.2.1"]]
 
   :cljx {:builds [{:source-paths ["src/cljx"]
                    :output-path "target/classes"
