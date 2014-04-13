@@ -244,7 +244,7 @@
       #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (mapcat metrics) distinct))
-      (track [this m] (mapcat #(track % m) this))
+      (track [this m] (mseq (mapcat #(track % m) this)))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [_] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-mseq m rfn this)))))
@@ -259,7 +259,7 @@
       #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (map metric) distinct))
-      (track [this m] (filter #(= (metric %) m) this))
+      (track [this m] (mseq (filter #(= (metric %) m) cs)))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [this] (interval-ctor cs dtval))
       (mget [this m rfn] (reduce-pvseq m rfn this)))))
