@@ -3,7 +3,8 @@
       #+clj  [clj-time.core :as time]
       #+cljs [cljs-time.core :as time]
       #+clj  [clj-time.coerce :as tc]
-      #+cljs [cljs-time.coerce :as tc]))
+      #+cljs [cljs-time.coerce :as tc]
+             [schema.core :as s]))
 
 ;; -----------------------------------------------------------------------------
 ;; Vars
@@ -51,7 +52,7 @@
 
 (declare reduce-pvseq)
 
-(defrecord Activity
+(defrecord ^:private Activity
     [dtstart annotations segments]
   ISports
   (sports [this]
@@ -66,7 +67,7 @@
   (interval [this] this)
   (mreduce [_  m rfn] (mreduce segments m rfn)))
 
-(defrecord Segment
+(defrecord ^:private Segment
     [dtstart duration sport annotations metrics]
   IInterval
   (dtstart [_] dtstart)
@@ -81,7 +82,7 @@
       (reduce-pvseq m rfn (track this m))
       (when (keyword? rfn) (rfn (m metrics))))))
 
-(defrecord PointValue
+(defrecord ^:private PointValue
     [instant value metric]
   IPointValue
   (inst [this] instant)
@@ -466,20 +467,43 @@
                  :instant => Reading instant (DateTime)
                  :<metric> (key corresponding to the metric-type) => <value>"
   [in]
-  (let [
-        ])
-  ;; TODO - use prismatic/schema for this
-  true)
+  (let [datetime #+clj org.joda.time.DateTime #+cljs goog.date.UtcDateTime
+        segment {:dtstart datetime
+                 :duration s/Num
+                 :sport (apply s/enum (seq sport-types))
+                 :active s/Bool
+                 :trigger (apply s/enum (seq trigger-types))
+                 :metrics {(s/optional-key :avg) [s/Num]
+                           (s/optional-key :max) [s/Num]
+                           (s/optional-key :min) [s/Num]
+                           (s/optional-key :total) [s/Num]
+                           (s/optional-key :track)
+                           [{:instant datetime
+                             ; Metric 
+                             (s/enum metric-types)
+                             (s/either
+                              s/Num
+                              {(s/required-key :lat) s/Num
+                               (s/required-key :lng) s/Num})}]
+                           s/Keyword s/Any}
+                 (s/optional-key :annotations) {s/Keyword s/Any}
+                 s/Keyword s/Any}
+        activity {:dtstart datetime
+                  (s/optional-key :annotations) {s/Keyword s/Any}
+                  :segments [segment]
+                  s/Keyword s/Any}
+        db {(s/optional-key :activities) [activity]}]
+    (s/validate db in)))
 
 (defn build
   "Takes a data structure as checked by valid-sweat? and yields a mostly
    identical new one, with the following features:
-     * The :activities coll is turned into an mseq (sorted IMeasured) and its
-       elements are also IMeasured (via Activity record)
-     * The :segments coll in each Activity is also made an mseq, with each of 
-       elements also becoming IMeasured (via Segment record) 
-     * All metric tracks are also made mseqs and their items made IPointValues
-       record"
+   * The :activities coll is turned into an mseq (sorted IMeasured) and its
+     elements are also IMeasured (via Activity record)
+   * The :segments coll in each Activity is also made an mseq, with each of 
+     elements also becoming IMeasured (via Segment record) 
+   * All metric tracks are also made mseqs and their items made IPointValues
+     record"
   [in]
   (letfn [(point-val [pv m]
             (map->PointValue
