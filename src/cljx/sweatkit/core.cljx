@@ -37,7 +37,7 @@
   (metrics [this])
   (tracked? [this metric])
   (track [this metric])
-  (mget [this metric rfn]))
+  (mreduce [this metric rfn]))
 
 (defprotocol IPointValue
   "A point value for some metric"
@@ -64,7 +64,7 @@
   (tracked? [_ m] (tracked? segments m))
   (track [_ m] (track segments m))
   (interval [this] this)
-  (mget [_  m rfn] (mget segments m rfn)))
+  (mreduce [_  m rfn] (mreduce segments m rfn)))
 
 (defrecord Segment
     [dtstart duration sport annotations metrics]
@@ -76,7 +76,7 @@
   (tracked? [this m] (not (empty? (track this m))))
   (track [this m] (:track (m metrics)))
   (interval [this] this)
-  (mget [this m rfn]
+  (mreduce [this m rfn]
     (if (tracked? this m)
       (reduce-pvseq m rfn (track this m))
       (when (keyword? rfn) (rfn (m metrics))))))
@@ -153,7 +153,7 @@
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
   ([md] (track md :speed))
-  ([md rfn] (mget md :speed rfn)))
+  ([md rfn] (mreduce md :speed rfn)))
 
 (defn pace
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -192,12 +192,12 @@
                                           (value v))))))
   ([md rfn] 
      (cond
-      (contains? (metrics md) :pace)     (mget md :pace rfn)
-      (contains? (metrics md) :speed)    (let [s (or (mget md :speed rfn) 0)]
+      (contains? (metrics md) :pace)     (mreduce md :pace rfn)
+      (contains? (metrics md) :speed)    (let [s (or (mreduce md :speed rfn) 0)]
                                            (when-not (zero? s)
                                              (double (/ 1.0 s))))
       (contains? (metrics md) :distance) (let [secs (or (duration (interval md)) 0)
-                                               dist (or (mget md :distance rfn) 0)]
+                                               dist (or (mreduce md :distance rfn) 0)]
                                            (when-not (zero? dist)
                                              (double (/ secs dist)))))))
 
@@ -207,7 +207,7 @@
    rfn can be any fn reducing point-vals or the :total keyword to get the
    accumulated value"
   ([md] (track md :calories))
-  ([md rfn] (mget md :calories rfn)))
+  ([md rfn] (mreduce md :calories rfn)))
 
 (defn altitude
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -215,7 +215,7 @@
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
   ([md] (track md :altitude))
-  ([md rfn] (mget md :altitude rfn)))
+  ([md rfn] (mreduce md :altitude rfn)))
 
 (defn hr
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -223,7 +223,7 @@
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
   ([md] (track md :hr))
-  ([md rfn] (mget md :hr rfn)))
+  ([md rfn] (mreduce md :hr rfn)))
 
 (defn power
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -231,7 +231,7 @@
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
   ([md] (track md :power))
-  ([md rfn] (mget md :power rfn)))
+  ([md rfn] (mreduce md :power rfn)))
 
 (defn cadence
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -239,7 +239,7 @@
    rfn can be any fn reducing point-vals or one of these keywords for
    standard behavior: :avg, :max, :min"
   ([md] (track md :cadence))
-  ([md rfn] (mget md :cadence rfn)))
+  ([md rfn] (mreduce md :cadence rfn)))
 
 (defn steps
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -247,7 +247,7 @@
    rfn can be any fn reducing point-vals or the :total keyword to get the
    accumulated value"
   ([md] (track md :steps))
-  ([md rfn] (mget md :steps rfn)))
+  ([md rfn] (mreduce md :steps rfn)))
 
 (defn distance
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -258,7 +258,7 @@
         Only tracks that provide this metric directly are considered (this might
         change in the future)"
   ([md] (track md :distance))
-  ([md rfn] (mget md :distance rfn)))
+  ([md rfn] (mreduce md :distance rfn)))
 
 (defmulti mseq
   "Takes a coll of measured or point-val elements and returns a sorted
@@ -285,7 +285,7 @@
       (track [this m] (mseq (mapcat #(track % m) this)))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [_] (interval-ctor cs dtval))
-      (mget [this m rfn] (reduce-mseq m rfn this)))))
+      (mreduce [this m rfn] (reduce-mseq m rfn this)))))
 
 (defmethod mseq :point-val [coll]
   (let [dtval #(inst %)
@@ -300,7 +300,7 @@
       (track [this m] (mseq (filter #(= (metric %) m) cs)))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [this] (interval-ctor cs dtval))
-      (mget [this m rfn] (reduce-pvseq m rfn this)))))
+      (mreduce [this m rfn] (reduce-pvseq m rfn this)))))
 
 (defn valid-sweat?
   "Takes a data structure and checks if it conforms to sweatkit's format:
@@ -408,7 +408,7 @@
   [m rfn mseq]
   (reduce-pvseq
    m rfn (remove nil?
-                 (map #(when-let [v (mget % m rfn)]
+                 (map #(when-let [v (mreduce % m rfn)]
                          (->PointValue (dtstart (interval %)) v m))
                       mseq))))
 
