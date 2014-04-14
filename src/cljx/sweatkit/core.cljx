@@ -94,79 +94,6 @@
 ;; Private API
 ;; =============================================================================
 
-(defmulti ^:private reduce-pvseq
-  "IPointValue seqs can be reduced to extract useful global values.
-   The reduce-pvseq multimethod provides a way to apply some default
-   reducers represented by keys, as well as using some other reducing fn.
-   The default reducers are: :avg, :savg, :max, :min, :total"
-  (fn [m rfn pvseq]
-    (when (every? #(= m (metric %)) pvseq)
-      (if (keyword? rfn) rfn :fn))))
-
-(defmethod reduce-pvseq :fn [m rfn pvseq]
-  "Reduces the pvseq with rfn"
-  (reduce rfn pvseq))                                  
-
-(defmethod reduce-pvseq :avg [m rfn pvseq]
-  "Applies a Simple Moving Average with linear interpolation, that works 
-   with unevenly spaced time series (which is most likely the case).
-   It then averages the SMA values over time and returns that"
-  (let [window-size 60000.0 ; (60 second)
-        roll-vals (sma-lin pvseq window-size)]
-    (/ (reduce + roll-vals) (count roll-vals))))
-
-(defmethod reduce-pvseq :min [m _ pvseq]
-  "Returns the minimum value in the pvseq"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply min vs))))
-
-(defmethod reduce-pvseq :max [m _ pvseq]
-  "Returns the max value in the pvseq"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply max vs))))
-
-(defmethod reduce-pvseq :total [m _ pvseq]
-  "Returns the final (total) value for the pvseq.
-   Useful for accumulating metrics"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply max vs))))
-
-(defmethod reduce-pvseq :default [m rfn pvseq])
-
-(defn- reduce-mseq 
-  "IMeasured seqs can be reduced. This fn takes a metric, a reducing fn and
-   the mseq. The thing to take note is that any metric that doesn't exist for
-   one elem will be treated as if the item did not exist in the seq"
-  [m rfn mseq]
-  (reduce-pvseq
-   m rfn (remove nil?
-                 (map #(when-let [v (mreduce % m rfn)]
-                         (->PointValue (dtstart (interval %)) v m))
-                      mseq))))
-
-(defn- sseq-ctor
-  "Creates a sorted seq based on the given coll and the dtval fn to call on
-   each item for comparison"
-  [coll dtval]
-  (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
-
-(defn- interval-ctor
-  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to
-   get an element's DateTime. This function assumes the seq is already
-   sorted"
-  [mseq dtval]
-  (reify IInterval
-    (dtstart [this]
-      (when-let [f (first mseq)]
-        (dtval f)))
-    (duration [this]
-      (when-let [f (first mseq)]
-        (time/in-seconds
-         (time/interval (dtval f) (dtval (last mseq))))))))
-
 (defn- sma-lin
   "Simple Moving Average with linear interpolation.
    Takes a PointValue seq and a parameter for window size in milliseconds.
@@ -231,6 +158,77 @@
               (recur left-new left-area-new (inc right) roll-area-new out-new))
             out))))))
 
+(defmulti ^:private reduce-pvseq
+  "IPointValue seqs can be reduced to extract useful global values.
+   The reduce-pvseq multimethod provides a way to apply some default
+   reducers represented by keys, as well as using some other reducing fn.
+   The default reducers are: :avg, :savg, :max, :min, :total"
+  (fn [m rfn pvseq]
+    (when (every? #(= m (metric %)) pvseq)
+      (if (keyword? rfn) rfn :fn))))
+
+(defmethod reduce-pvseq :fn [m rfn pvseq]
+  "Reduces the pvseq with rfn"
+  (reduce rfn pvseq))                                  
+
+(defmethod reduce-pvseq :avg [m rfn pvseq]
+  "Applies a Simple Moving Average with linear interpolation, that works 
+   with unevenly spaced time series (which is most likely the case).
+   It then averages the SMA values over time and returns that"
+  (let [window-size 60000.0 ; (60 second)
+        roll-vals (sma-lin pvseq window-size)]
+    (/ (reduce + roll-vals) (count roll-vals))))
+
+(defmethod reduce-pvseq :min [m _ pvseq]
+  "Returns the minimum value in the pvseq"
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply min vs))))
+
+(defmethod reduce-pvseq :max [m _ pvseq]
+  "Returns the max value in the pvseq"
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply max vs))))
+
+(defmethod reduce-pvseq :total [m _ pvseq]
+  "Returns the final (total) value for the pvseq.
+   Useful for accumulating metrics"
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply max vs))))
+
+(defn- reduce-mseq 
+  "IMeasured seqs can be reduced. This fn takes a metric, a reducing fn and
+   the mseq. The thing to take note is that any metric that doesn't exist for
+   one elem will be treated as if the item did not exist in the seq"
+  [m rfn mseq]
+  (reduce-pvseq
+   m rfn (remove nil?
+                 (map #(when-let [v (mreduce % m rfn)]
+                         (->PointValue (dtstart (interval %)) v m))
+                      mseq))))
+
+(defn- sseq-ctor
+  "Creates a sorted seq based on the given coll and the dtval fn to call on
+   each item for comparison"
+  [coll dtval]
+  (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
+
+(defn- interval-ctor
+  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to
+   get an element's DateTime. This function assumes the seq is already
+   sorted"
+  [mseq dtval]
+  (reify IInterval
+    (dtstart [this]
+      (when-let [f (first mseq)]
+        (dtval f)))
+    (duration [this]
+      (when-let [f (first mseq)]
+        (time/in-seconds
+         (time/interval (dtval f) (dtval (last mseq))))))))
+
 ;; -----------------------------------------------------------------------------
 ;; Public API
 ;; =============================================================================
@@ -261,8 +259,6 @@
       (cond
        (every? measured? coll) :measured
        (every? point-val? coll) :point-val))))
-
-(defmethod mseq :default [_])
 
 (defmethod mseq :measured [coll]
   (let [dtval #(dtstart (interval %))
