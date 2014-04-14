@@ -10,7 +10,8 @@
 ;; =============================================================================
 
 (def metric-types
-  #{:hr :power :cadence :steps :speed :distance :position :altitude :calories})
+  #{:hr :power :cadence :steps :speed :distance
+    :pace :position :altitude :calories})
 
 (def trigger-types (st/union #{:manual :time} metric-types))
 
@@ -158,10 +159,47 @@
   "Takes a measured object and an optional reducing fn. When the fn is not
    given, yields the whole Pace track, otherwise it returns a single value.
    rfn can be any fn reducing point-vals or one of these keywords for
-   standard behavior: :avg, :max, :min"
-  ;; TODO in case this track does not exist, try to calculate it from :speed
-  ([md] (track md :pace))
-  ([md rfn] (mget md :pace rfn)))
+   standard behavior: :avg, :max, :min.
+
+   If the measured obj doesn't have this metric itself, this fn tries to get
+   it via the :speed and :distance metrics (in that order), in case they exist.
+   In these cases, the returned values will be limited to the data that is
+   available for :speed or :distance."
+  ([md] 
+     (cond
+      (tracked? md :pace)    (track md :pace)
+      (tracked? md :speed)   (map #(->PointValue (inst %)
+                                                 (/ 1.0 (value %))
+                                                 :pace)
+                                  (track md :speed)))
+     (tracked? md :distance) (loop [dist-trk (track md :distance)
+                                    pace-trk []
+                                    prev-inst (inst (first dist-trk))
+                                    prev-dist (value (first dist-trk))]
+                               (if (empty? dist-trk)
+                                 (mseq pace-trk)
+                                 (let [v (first dist-trk)
+                                       secs (time/in-seconds
+                                             (time/interval prev-inst (inst v)))
+                                       dist (- (value v) prev-dist)
+                                       p (double (if-not (zero? dist)
+                                                   (/ secs dist)
+                                                   0))]
+                                   (recur (next dist-trk)
+                                          (conj pace-trk
+                                                (->PointValue (inst v) p :pace))
+                                          (inst v)
+                                          (value v))))))
+  ([md rfn] 
+     (cond
+      (contains? (metrics md) :pace)     (mget md :pace rfn)
+      (contains? (metrics md) :speed)    (let [s (or (mget md :speed rfn) 0)]
+                                           (when-not (zero? s)
+                                             (double (/ 1.0 s))))
+      (contains? (metrics md) :distance) (let [secs (or (duration (interval md)) 0)
+                                               dist (or (mget md :distance rfn) 0)]
+                                           (when-not (zero? dist)
+                                             (double (/ secs dist)))))))
 
 (defn calories
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -289,7 +327,6 @@
   ;; TODO - use prismatic/schema for this
   true)
 
-
 (defn build
   "Takes a data structure as checked by valid-sweat? and yields a mostly
    identical new one, with the following features:
@@ -309,9 +346,8 @@
                         {:track t}))})
           (segment [s]
             (map->Segment
-             (merge s {:metrics
-                       (apply merge (for [[m v] (:metrics s)]
-                                      (metric m v)))})))
+             (merge s {:metrics (apply merge (for [[m v] (:metrics s)]
+                                               (metric m v)))})))
           (activity [a]
             (map->Activity
              (merge a {:segments (mseq (map segment (:segments a)))})))]
@@ -340,22 +376,28 @@
   "Applies a Simple Moving Average with linear interpolation, that works 
    with unevenly spaced time series (which is most likely the case).
    It then averages the SMA values over time and returns that"
-  (let [window-size 60000.0 ; (60 seconds)
+  (let [window-size 60000.0 ; (60 second)
         roll-vals (sma-lin pvseq window-size)]
     (/ (reduce + roll-vals) (count roll-vals))))
 
 (defmethod reduce-pvseq :min [m _ pvseq]
   "Returns the minimum value in the pvseq"
-  (apply min (map value pvseq)))
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply min vs))))
 
 (defmethod reduce-pvseq :max [m _ pvseq]
   "Returns the max value in the pvseq"
-  (apply max (map value pvseq)))
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply max vs))))
 
 (defmethod reduce-pvseq :total [m _ pvseq]
   "Returns the final (total) value for the pvseq.
    Useful for accumulating metrics"
-  (apply max (map value pvseq)))
+  (let [vs (map value pvseq)]
+    (when (> (count vs) 0)
+      (apply max vs))))
 
 (defmethod reduce-pvseq :default [m rfn pvseq])
 
