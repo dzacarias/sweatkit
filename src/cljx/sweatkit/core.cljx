@@ -325,7 +325,7 @@
       (let [[under over] (split-with #(<= (value %) acc) mtk)
             x (interpolate (last under) (first over) acc)]
           (if (empty? over)
-            (map mseq (conj sp under))
+            (mseq (map mseq (conj sp under)))
             (recur (cons x over) (+ acc v) (conj sp (cons x under))))))))
 
 (defn speed
@@ -444,10 +444,10 @@
 (defn valid-sweat?
   "Takes a data structure and checks if it conforms to sweatkit's format:
    A map with these keys and values:
-    :activities => collection of maps like this:
-        :dtstart => DateTime, starting instant
-        :annotations => Map with relevant annotations
-        :segments => collection of maps like this:
+    :activities => Collection of maps like this:
+        :dtstart => DateTime - starting instant
+        :annotations => Map - Relevant annotations
+        :segments => Collection of maps like this:
            :dtstart => Starting instant (DateTime)
            :duration => Number of milliseconds (Integer)
            :active => Was this an active period? (Boolean)
