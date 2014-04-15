@@ -7,8 +7,6 @@ sweatkit is a Clojure(Script) library to work with sports activities data.
 stage, please open an issue before submitting a PR so an approach can be
 discussed prior to your work*
 
---
-
 ## Motivation and Goals
 
 sweatkit is motivated by two unaddressed problems while trying to work with this kind of data:
@@ -44,7 +42,7 @@ Leiningen dependency info and examples will be available here when there's an of
 
 ## Roadmap
 
-sweatkit's development will be driven mostly by needs that arise while working on a related project (TBA soon). We have some ideas and 
+sweatkit's development will be driven mostly by needs that arise while working on a related project (TBA soon). To give you an idea of where we're headed, here's a list of features that we'd like to add over time:
 
 - TCX format emitting
 - FIT format parsing/emitting
@@ -52,6 +50,7 @@ sweatkit's development will be driven mostly by needs that arise while working o
 - Support for workout plans and courses
 - Performance Analysis and Projections
 - More sports types (testing & possible adaptations)
+- More formats
 
 ## License
 
