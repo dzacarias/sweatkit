@@ -1,4 +1,4 @@
-(ns sweatkit.parse.tcx
+(ns sweatkit.formats.tcx
   "TCX to sweatkit format parser. Due to XML deps, this is a Clojure-only
    namespace for now. There's only support for Activity nodes, with
    MultiSportSessions coming next. Workouts and Courses will only be

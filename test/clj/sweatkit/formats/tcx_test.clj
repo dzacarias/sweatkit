@@ -1,7 +1,7 @@
-(ns sweatkit.parse.tcx-test
+(ns sweatkit.formats.tcx-test
   (:require [clojure.test :refer :all]
             [clojure.java.io :as io]
-            [sweatkit.parse.tcx :refer :all]
+            [sweatkit.formats.tcx :refer :all]
             [clj-time.coerce :as tc]))
 
 ;; -----------------------------------------------------------------------------
