@@ -7,18 +7,6 @@
              [schema.core :as s]))
 
 ;; -----------------------------------------------------------------------------
-;; Vars
-;; =============================================================================
-
-(def metric-types
-  #{:hr :power :cadence :steps :speed :distance
-    :pace :position :altitude :calories})
-
-(def trigger-types (st/union #{:manual :time} metric-types))
-
-(def sport-types #{:running :cycling})
-
-;; -----------------------------------------------------------------------------
 ;; Abstractions
 ;; =============================================================================
 
@@ -232,6 +220,21 @@
 ;; -----------------------------------------------------------------------------
 ;; Public API
 ;; =============================================================================
+
+(def metric-types
+  "The set of supported metric types"
+  #{:hr :power :cadence :steps :speed :distance
+    :pace :position :altitude :calories})
+
+(def trigger-types
+  "The set of supported segment triggers (what causes an activity segment
+   to be created)"
+  (st/union #{:manual :time} metric-types))
+
+(def sport-types
+  "The set of supported sport types"
+  #{:running :cycling})
+
 
 (defn measured?
   "Tests if x implements the IMeasured interface"
