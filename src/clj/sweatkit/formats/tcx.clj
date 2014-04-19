@@ -5,7 +5,6 @@
    supported if/when sweatkit.core is extended to those concepts"
   (:require [clojure.xml :as xml]
             [clojure.zip :as zip]
-            [clojure.data.zip.xml :as zip-xml :refer [xml-> xml1-> attr]]
             [clojure.java.io :as io]
             [clj-time.format :as time]
             [sweatkit.core :as sk])
@@ -22,8 +21,33 @@
 
 (defn- parse-int [txt] (Integer/parseInt txt))
 
+;; Taken and adapted from clojure.data.zip
+(defn- right-locs
+  "Returns a lazy sequence of locations to the right of loc, starting with loc."
+  [loc]
+  (lazy-seq (when loc (cons loc (right-locs (zip/right loc))))))
+
+(defn- xml->
+  "Emulates clojure.data.zip's xml->, but only takes a sequence of keywords
+   to use as filters to zip down from a top loc"
+  [loc & preds]
+  (loop [locs (right-locs (zip/down loc))
+         tags preds]
+    (let [v (filter #(= (:tag (zip/node %)) (first tags)) locs)]
+      (if (empty? (next tags))
+          v
+          (recur (mapcat #(when (zip/branch? %)
+                            (right-locs (zip/down %)))
+                         v)
+                 (next tags))))))
+
+(defn- xml1->
+  "Returns the first result from xml->"
+  [loc & preds]
+  (first (apply xml-> loc preds)))
+
 (defn- xml1->text [loc & preds] 
-  (some-> (apply xml1-> loc preds) zip-xml/text))
+  (some-> (apply xml1-> loc preds) zip/node :content first))
 
 (defn- xml1->double [loc & preds]
   (some-> (apply xml1->text loc preds) parse-double))
@@ -33,6 +57,10 @@
 
 (defn- xml1->inst [loc & preds]
   (some-> (apply xml1->text loc preds) time/parse))
+
+(defn- attr [loc name]
+  (when (zip/branch? loc) (-> loc zip/node :attrs name)))
+
 
 ;; ==============================================================================
 ;; Main 
