@@ -66,11 +66,15 @@
 
 (defn parse-double [txt]
   #+clj
-  (Double/parseDouble txt))
+  (Double/parseDouble txt)
+  #+cljs
+  (js/parseFloat txt))
 
 (defn parse-int [txt]
   #+clj
-  (Integer/parseInt txt))
+  (Integer/parseInt txt)
+  #+cljs
+  (js/parseInt txt))
 
 ;; Adapted from clojure.data.zip
 (defn- right-locs
