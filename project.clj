@@ -30,12 +30,14 @@
   :test-paths ["test/clj" "target/test-classes"]
   :jar-exclusions [#"\.cljx|\.DS_Store"]
   
-  :cljsbuild {:test-commands {"node" ["node" :node-runner "target/testable.js"]}
-              :builds [{:source-paths ["target/classes" "target/test-classes"]
-                        :compiler {:output-to "target/testable.js"
-                                   :optimizations :advanced
-                                   :pretty-print true
-                                   :libs [""]}}]}
+  :cljsbuild {:test-commands {"browser" ["phantomjs" :runner
+                                         "this.literal_js_was_evaluated=true"
+                                         "target/testable.js"]}
+              :builds {:testing {:source-paths ["target/classes" "target/test-classes"]
+                                 :compiler {:output-to "target/testable.js"
+                                            :optimizations :whitespace
+                                            :pretty-print true
+                                            :libs [""]}}}}
 
   :profiles {:dev {:dependencies [[com.cemerick/double-check "0.5.7-SNAPSHOT"]]
                    :plugins [[com.keminglabs/cljx "0.3.2"]
