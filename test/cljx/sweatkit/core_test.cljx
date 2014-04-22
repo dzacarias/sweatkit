@@ -1,15 +1,13 @@
 (ns sweatkit.core-test
   (:require [sweatkit.core :as sk]
-            #+clj [clojure.test :as t
-                   :refer (is deftest with-test run-tests testing)]
+            #+clj  [clojure.test :as t :refer :all]  
             #+cljs [cemerick.cljs.test :as t]
             [cemerick.double-check :as sc]
             [cemerick.double-check.generators :as gen]
             [cemerick.double-check.properties :as prop :include-macros true]
             [cemerick.double-check.clojure-test :refer (defspec) :include-macros true]
             #+clj  [clj-time.coerce :as tc]
-            #+cljs [cljs-time.coerce :as tc]
-      )
+            #+cljs [cljs-time.coerce :as tc])
   #+cljs
   (:require-macros [cemerick.cljs.test
                     :refer (is deftest with-test run-tests testing test-var)]))
