@@ -29,15 +29,6 @@
   :source-paths ["src/clj" "target/classes"]
   :test-paths ["test/clj" "target/test-classes"]
   :jar-exclusions [#"\.cljx|\.DS_Store"]
-  
-  :cljsbuild {:test-commands {"browser" ["phantomjs" :runner
-                                         "this.literal_js_was_evaluated=true"
-                                         "target/testable.js"]}
-              :builds {:testing {:source-paths ["target/classes" "target/test-classes"]
-                                 :compiler {:output-to "target/testable.js"
-                                            :optimizations :whitespace
-                                            :pretty-print true
-                                            :libs [""]}}}}
 
   :profiles {:dev {:dependencies [[com.cemerick/double-check "0.5.7-SNAPSHOT"]]
                    :plugins [[com.keminglabs/cljx "0.3.2"]
@@ -45,6 +36,14 @@
                              [com.cemerick/clojurescript.test "0.3.0"]
                              [com.cemerick/austin "0.1.4"]]
                    :hooks [cljx.hooks]
-                   :aliases {"cleantest" ["do" "clean," "cljx" "once," "test,"
-                                          "cljsbuild" "test"]
-                             "deploy" ["do" "clean," "cljx" "once," "deploy" "clojars"]}}})
+                   :aliases {"cleantest" ["do" "clean," "cljx" "once," "test," "cljsbuild" "test"]
+                             "deploy" ["do" "clean," "cljx" "once," "deploy" "clojars"]}}}
+
+  :cljsbuild { :builds [{:source-paths ["target/classes" "target/test-classes"]
+                         :compiler {:output-to "target/js/testable.js"
+                                    :optimizations :advanced
+                                    :pretty-print true
+                                    :libs [""]}}]
+              :test-commands {"browser" ["phantomjs" :runner
+                                         "this.literal_js_was_evaluated=true"
+                                         "target/js/testable.js"]}})

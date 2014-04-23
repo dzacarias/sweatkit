@@ -2,22 +2,19 @@
   (:require #+clj  [clojure.test :as t :refer :all]
             #+cljs [cemerick.cljs.test :as t]
             #+clj  [clojure.java.io :as io]
-            #+cljs [cljs.nodejs :as node]
             #+clj  [clj-time.coerce :as tc]
             #+cljs [cljs-time.coerce :as tc]
-                   [sweatkit.formats.tcx :refer (parse)])
+            [sweatkit.formats.tcx :refer (parse)])
   #+cljs
   (:require-macros [cemerick.cljs.test
                     :refer (is deftest with-test run-tests testing test-var)]))
 
 ;#+cljs
-;(def fs (node/require "fs"))
+;(def fs (js* "require('fs')"))
 
-#+clj
 (defn- parse-file [path]
   (let [f #+clj (io/file path)
-          ;#+cljs (.readFileSync fs path "utf8")
-        ]
+          #+cljs (.readFileSync fs path "utf8")]
     (parse f)))
 
 ;; -----------------------------------------------------------------------------
