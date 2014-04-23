@@ -293,6 +293,7 @@
       (interval [this] (interval-ctor cs dtval))
       (mreduce [this m rfn] (reduce-pvseq m rfn this)))))
 
+(defmethod mseq :default [_])
 
 (defn interpolate
   "Takes two point-vals and an intermediate value. Yields a new

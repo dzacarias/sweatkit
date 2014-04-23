@@ -9,12 +9,14 @@
   (:require-macros [cemerick.cljs.test
                     :refer (is deftest with-test run-tests testing test-var)]))
 
-;#+cljs
-;(def fs (js* "require('fs')"))
+#+cljs
+(defn- lookup-file-str [path]
+   ;(this-as this (aget this "prop_name"))
+  )
 
 (defn- parse-file [path]
   (let [f #+clj (io/file path)
-          #+cljs (.readFileSync fs path "utf8")]
+          #+cljs (lookup-file-str path)]
     (parse f)))
 
 ;; -----------------------------------------------------------------------------
