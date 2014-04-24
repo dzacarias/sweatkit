@@ -10,28 +10,26 @@
                     :refer (is deftest with-test run-tests testing test-var)]))
 
 #+cljs
-(defn- lookup-file-str [path]
-   ;(this-as this (aget this "prop_name"))
-  )
+(defn- test-data [path]
+  (aget (this-as this (aget this "cljs_test_data")) path))
 
 (defn- parse-file [path]
   (let [f #+clj (io/file path)
-          #+cljs (lookup-file-str path)]
+          #+cljs (test-data path)]
     (parse f)))
 
 ;; -----------------------------------------------------------------------------
 ;; Unit tests
 ;; Some example-based unit tests, to cover the basics
 
-#+clj
 (deftest activity-detail-test
   (testing "Parsing activity detail with multiple metrics, including GPS"
-    (let [p (parse-file "test-resources/FitnessHistoryDetail.tcx")
+    (let [p (parse-file "test-resources/tcx/FitnessHistoryDetail.tcx")
           a (first (:activities p))
           s (first (:segments a))]
       
       (is (= 1 (count (:activities p))))
-      (is (= (tc/from-string "2007-08-07T02:42:41Z") (:dtstart a)))
+      (is (.equals (tc/from-string "2007-08-07T02:42:41Z") (:dtstart a)))
       (is (= (sort (keys (:metrics s)))
              (sort [:distance :speed :calories :position :altitude])))
       (is (= 285 (get-in s [:metrics :calories :total])))
@@ -44,7 +42,7 @@
       (is (= 373 (count (get-in s [:metrics :position :track]))))))
 
   (testing "Parsing activity detail with footpod and no GPS"
-    (let [p (parse-file "test-resources/Forerunner50FirstExample.tcx")
+    (let [p (parse-file "test-resources/tcx/Forerunner50FirstExample.tcx")
           a (first (:activities p))]
       (is (= 1 (count (:activities p))))
       (is (= 5 (count (:segments a))))
@@ -59,7 +57,7 @@
                            (:segments a)))))))
 
   (testing "Parsing activity detail with power metrics"
-    (let [p (parse-file "test-resources/PowerExample.tcx")
+    (let [p (parse-file "test-resources/tcx/PowerExample.tcx")
           a (first (:activities p))
           s (first (:segments a))]
       (is (= 1 (count (:activities p))))
@@ -68,17 +66,15 @@
       (is (= 2093 (get-in s [:metrics :power :max])))
       (is (= 1000 (get-in s [:metrics :power :avg]))))))
 
-#+clj
 (deftest activity-list-test
   (testing "Parsing activity list files, with individual summaries"
-    (let [p (parse-file "test-resources/FitnessHistoryDirectory.tcx")]
+    (let [p (parse-file "test-resources/tcx/FitnessHistoryDirectory.tcx")]
       (is (= 7 (count (:activities p)))))))
 
-#+clj
 (deftest unsupported-elements-test
   (testing "Parsing files with unsupported elements"
-    (let [p1 (parse-file "test-resources/FitnessCoursesDetail.tcx")
-          p2 (parse-file "test-resources/FitnessCoursesDirectory.tcx")]
+    (let [p1 (parse-file "test-resources/tcx/FitnessCoursesDetail.tcx")
+          p2 (parse-file "test-resources/tcx/FitnessCoursesDirectory.tcx")]
       
       (is (= 0 (count (:activities p1))))
       (is (= 0 (count (:activities p2)))))))

@@ -44,6 +44,7 @@
                                     :optimizations :advanced
                                     :pretty-print true
                                     :libs [""]}}]
-              :test-commands {"browser" ["phantomjs" :runner
+              :test-commands {"browser" ["phantomjs" "test-resources/runner.js"
+                                         "--test-data=test-resources/tcx"
                                          "this.literal_js_was_evaluated=true"
                                          "target/js/testable.js"]}})
