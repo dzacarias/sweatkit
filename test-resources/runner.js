@@ -14,15 +14,15 @@ function loadTestData(path) {
                          this.cljs_test_data[\"" + file + "\"] = \"" + str + "\"; })");
   };
   
-  if (fs.isDirectory(m[1])) {
-    fs.list(m[1]).forEach(function(f) {
-      var lf = m[1] + fs.separator + f;
+  if (fs.isDirectory(path)) {
+    fs.list(path).forEach(function(f) {
+      var lf = path + fs.separator + f;
       if (fs.isFile(lf)) {
         loadFile(lf);
       }
     });
   } else {
-    loadFile(m[1]);
+    loadFile(path);
   }
 }
 
