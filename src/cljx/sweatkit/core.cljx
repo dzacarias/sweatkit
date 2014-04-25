@@ -202,21 +202,7 @@
    each item for comparison"
   [coll dtval]
   (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
-
-(defn- interval-ctor
-  "Builds an interval for an IMeasured seq (mseq), using the dtval fn to
-   get an element's DateTime. This function assumes the seq is already
-   sorted"
-  [mseq dtval]
-  (reify IInterval
-    (dtstart [this]
-      (when-let [f (first mseq)]
-        (dtval f)))
-    (duration [this]
-      (when-let [f (first mseq)]
-        (time/in-seconds
-         (time/interval (dtval f) (dtval (last mseq))))))))
-
+                                        
 ;; -----------------------------------------------------------------------------
 ;; Public API
 ;; =============================================================================
@@ -275,7 +261,12 @@
       (metrics [this] (->> this (mapcat metrics) distinct))
       (track [this m] (mseq (mapcat #(track % m) this)))
       (tracked? [this m] (not (empty? (track this m))))
-      (interval [_] (interval-ctor cs dtval))
+      (interval [_]
+        (reify IInterval
+          (dtstart [this]
+            (some-> cs first dtval))
+          (duration [this]
+            (reduce + (map #(-> % interval duration) cs)))))
       (mreduce [this m rfn] (reduce-mseq m rfn this)))))
 
 (defmethod mseq :point-val [coll]
@@ -290,7 +281,13 @@
       (metrics [this] (->> this (map metric) distinct))
       (track [this m] (mseq (filter #(= (metric %) m) cs)))
       (tracked? [this m] (not (empty? (track this m))))
-      (interval [this] (interval-ctor cs dtval))
+      (interval [this]
+        (reify IInterval
+          (dtstart [this]
+            (some-> cs first dtval))
+          (duration [this]
+            (when-let [f (first cs)]
+              (time/in-seconds (time/interval (dtval f) (dtval (last cs))))))))
       (mreduce [this m rfn] (reduce-pvseq m rfn this)))))
 
 (defmethod mseq :default [_])
@@ -325,7 +322,7 @@
    the surrounding points. All other metrics are also split at this instant"
   [md m v]
   (when (and (measured? md) (acc-metric? m) (tracked? md m))
-    (loop [mtk (vec (track md m)), acc v, sp []]
+    (loop [mtk (track md m), acc v, sp []]
       (let [[under over] (split-with #(<= (value %) acc) mtk)
             x (interpolate (last under) (first over) acc)]
           (if (empty? over)
