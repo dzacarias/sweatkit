@@ -7,7 +7,7 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/clojurescript "0.0-2202"]
                  [clj-time "0.6.0"]
-                 [com.andrewmcveigh/cljs-time "0.1.1"]
+                 [com.andrewmcveigh/cljs-time "0.1.4"]
                  [prismatic/schema "0.2.1"]]
 
   :cljx {:builds [{:source-paths ["src/cljx"]
@@ -30,8 +30,7 @@
   :test-paths ["test/clj" "target/test-classes"]
   :jar-exclusions [#"\.cljx|\.DS_Store"]
 
-  :profiles {:dev {:dependencies [[com.cemerick/double-check "0.5.7-SNAPSHOT"]]
-                   :plugins [[com.keminglabs/cljx "0.3.2"]
+  :profiles {:dev {:plugins [[com.keminglabs/cljx "0.3.2"]
                              [lein-cljsbuild "1.0.3"]
                              [com.cemerick/clojurescript.test "0.3.0"]
                              [com.cemerick/austin "0.1.4"]]
@@ -42,8 +41,7 @@
   :cljsbuild { :builds [{:source-paths ["target/classes" "target/test-classes"]
                          :compiler {:output-to "target/js/testable.js"
                                     :optimizations :advanced
-                                    :pretty-print true
-                                    :libs [""]}}]
+                                    :pretty-print true}}]
               :test-commands {"browser" ["phantomjs" "test-resources/runner.js"
                                          "--test-data=test-resources/tcx"
                                          "this.literal_js_was_evaluated=true"

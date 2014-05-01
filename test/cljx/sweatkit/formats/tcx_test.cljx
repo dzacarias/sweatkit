@@ -1,30 +1,20 @@
 (ns sweatkit.formats.tcx-test
   (:require #+clj  [clojure.test :as t :refer :all]
             #+cljs [cemerick.cljs.test :as t]
-            #+clj  [clojure.java.io :as io]
             #+clj  [clj-time.coerce :as tc]
             #+cljs [cljs-time.coerce :as tc]
-            [sweatkit.formats.tcx :refer (parse)])
+            [sweatkit.formats.tcx :refer (parse)]
+            [sweatkit.test-util :as util])
   #+cljs
   (:require-macros [cemerick.cljs.test
                     :refer (is deftest with-test run-tests testing test-var)]))
 
-#+cljs
-(defn- test-data [path]
-  (aget (this-as this (aget this "cljs_test_data")) path))
-
-(defn- parse-file [path]
-  (let [f #+clj (io/file path)
-          #+cljs (test-data path)]
-    (parse f)))
-
 ;; -----------------------------------------------------------------------------
 ;; Unit tests
-;; Some example-based unit tests, to cover the basics
 
 (deftest activity-detail-test
   (testing "Parsing activity detail with multiple metrics, including GPS"
-    (let [p (parse-file "test-resources/tcx/FitnessHistoryDetail.tcx")
+    (let [p (-> (util/read-file "test-resources/tcx/FitnessHistoryDetail.tcx") parse)
           a (first (:activities p))
           s (first (:segments a))]
       
@@ -42,7 +32,7 @@
       (is (= 373 (count (get-in s [:metrics :position :track]))))))
 
   (testing "Parsing activity detail with footpod and no GPS"
-    (let [p (parse-file "test-resources/tcx/Forerunner50FirstExample.tcx")
+    (let [p (-> (util/read-file "test-resources/tcx/Forerunner50FirstExample.tcx") parse)
           a (first (:activities p))]
       (is (= 1 (count (:activities p))))
       (is (= 5 (count (:segments a))))
@@ -57,7 +47,7 @@
                            (:segments a)))))))
 
   (testing "Parsing activity detail with power metrics"
-    (let [p (parse-file "test-resources/tcx/PowerExample.tcx")
+    (let [p (-> (util/read-file "test-resources/tcx/PowerExample.tcx") parse)
           a (first (:activities p))
           s (first (:segments a))]
       (is (= 1 (count (:activities p))))
@@ -68,18 +58,13 @@
 
 (deftest activity-list-test
   (testing "Parsing activity list files, with individual summaries"
-    (let [p (parse-file "test-resources/tcx/FitnessHistoryDirectory.tcx")]
+    (let [p (-> (util/read-file "test-resources/tcx/FitnessHistoryDirectory.tcx") parse)]
       (is (= 7 (count (:activities p)))))))
 
 (deftest unsupported-elements-test
   (testing "Parsing files with unsupported elements"
-    (let [p1 (parse-file "test-resources/tcx/FitnessCoursesDetail.tcx")
-          p2 (parse-file "test-resources/tcx/FitnessCoursesDirectory.tcx")]
+    (let [p1 (-> (util/read-file "test-resources/tcx/FitnessCoursesDetail.tcx") parse)
+          p2 (-> (util/read-file "test-resources/tcx/FitnessCoursesDirectory.tcx") parse)]
       
       (is (= 0 (count (:activities p1))))
       (is (= 0 (count (:activities p2)))))))
-
-
-;; -----------------------------------------------------------------------------
-;; Property-based tests
-;; TODO

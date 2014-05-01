@@ -106,7 +106,7 @@
                   [k v] tp :when (not (nil? v))]
               (select-keys tp [:instant k]))]
     {:dtstart     (time/parse (attr lap :StartTime))
-     :duration    (xml1->double lap :TotalTimeSeconds)
+     :duration    (int (* 1000 (xml1->double lap :TotalTimeSeconds)))
      :active      (= :active (get intensities (xml1->text lap :Intensity))) 
      :trigger     (get lap-triggers (xml1->text lap :TriggerMethod)) 
      :annotations {:notes (xml1->text lap :Notes)}

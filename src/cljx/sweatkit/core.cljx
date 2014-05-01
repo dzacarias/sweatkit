@@ -21,7 +21,8 @@
 
 (defprotocol IMeasured
   "A set of sports metrics taken over a time interval. Depending on the source
-   device, metrics may be tracked over time or just stored as global values"
+   device, metrics may be tracked over time or just stored as global values;
+   this abstraction lets you access the whole track and/or the reduced value"
   (interval [this])
   (metrics [this])
   (tracked? [this metric])
@@ -47,7 +48,7 @@
     (->> segments (map :sport) (remove nil?) distinct))
   IInterval
   (dtstart [this] dtstart)
-  (duration [this] (->> segments (map duration) (reduce +)))
+  (duration [this] (-> segments interval duration))
   IMeasured
   (metrics [_] (metrics segments))
   (tracked? [_ m] (tracked? segments m))
@@ -150,52 +151,81 @@
   "IPointValue seqs can be reduced to extract useful global values.
    The reduce-pvseq multimethod provides a way to apply some default
    reducers represented by keys, as well as using some other reducing fn.
-   The default reducers are: :avg, :savg, :max, :min, :total"
-  (fn [m rfn pvseq]
-    (when (every? #(= m (metric %)) pvseq)
-      (if (keyword? rfn) rfn :fn))))
+   The default reducers are: :avg, :max, :min and :total"
+  (fn [m rfn mseq]
+    (cond
+     (keyword? rfn) rfn
+     (fn? rfn) :fn)))
 
 (defmethod reduce-pvseq :fn [m rfn pvseq]
   "Reduces the pvseq with rfn"
-  (reduce rfn pvseq))                                  
+  (reduce rfn (filter #(= m (metric %)) pvseq)))                                  
 
 (defmethod reduce-pvseq :avg [m rfn pvseq]
   "Applies a Simple Moving Average with linear interpolation, that works 
    with unevenly spaced time series (which is most likely the case).
    It then averages the SMA values over time and returns that"
   (let [window-size 60000.0 ; (60 second)
-        roll-vals (sma-lin pvseq window-size)]
+        roll-vals (sma-lin (filter #(= m (metric %)) pvseq)
+                           window-size)]
     (/ (reduce + roll-vals) (count roll-vals))))
 
 (defmethod reduce-pvseq :min [m _ pvseq]
   "Returns the minimum value in the pvseq"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply min vs))))
+  (let [vs (map value (filter #(= m (metric %)) pvseq))]
+    (when-not (empty? vs) (apply min vs))))
 
 (defmethod reduce-pvseq :max [m _ pvseq]
   "Returns the max value in the pvseq"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply max vs))))
+  (let [vs (map value (filter #(= m (metric %)) pvseq))]
+    (when-not (empty? vs) (apply max vs))))
 
 (defmethod reduce-pvseq :total [m _ pvseq]
   "Returns the final (total) value for the pvseq.
    Useful for accumulating metrics"
-  (let [vs (map value pvseq)]
-    (when (> (count vs) 0)
-      (apply max vs))))
+  (let [vs (map value (filter #(= m (metric %)) pvseq))]
+    (when-not (empty? vs) (apply max vs))))
 
-(defn- reduce-mseq 
-  "IMeasured seqs can be reduced. This fn takes a metric, a reducing fn and
-   the mseq. The thing to take note is that any metric that doesn't exist for
-   one elem will be treated as if the item did not exist in the seq"
-  [m rfn mseq]
-  (reduce-pvseq
-   m rfn (remove nil?
-                 (map #(when-let [v (mreduce % m rfn)]
-                         (->PointValue (dtstart (interval %)) v m))
-                      mseq))))
+(defmulti ^:private reduce-mseq
+  "IMeasured seqs can be reduced to extract useful global values.
+   The reduce-mseq multimethod provides a way to apply some default
+   reducers represented by keys, as well as using some other reducing fn.
+   The default reducers are: :avg, :max, :min, :total. Only seq elements
+   that contain the given metric/reduced value will be considered"
+  (fn [m rfn mseq]
+    (cond
+     (keyword? rfn) rfn
+     (fn? rfn) :fn)))
+
+(defmethod reduce-mseq :fn [m rfn mseq]
+  "Reduces the mseq with rfn"
+  (reduce rfn mseq))
+
+(defmethod reduce-mseq :avg [m rfn mseq]
+  "Returns the avg value for the given metric in mseq's elements. Each
+   element's average value is weighted by its interval duration"
+  (let [vals (remove nil? (map #(let [avg (mreduce % m :avg)
+                                      dur (-> % interval duration)]
+                                  (when avg
+                                    (hash-map :val (* dur avg) :itv dur)))
+                               mseq))]
+    (float (/ (apply + (map :val vals))
+              (apply + (map :itv vals))))))
+
+(defmethod reduce-mseq :max [m rfn mseq]
+  "Returns the max value for the given metric in mseq's elements"
+  (let [vs (remove nil? (map #(mreduce % m :max) mseq))]
+    (when-not (empty? vs) (apply max vs))))
+
+(defmethod reduce-mseq :min [m rfn mseq]
+  "Returns the min value for the given metric in mseq's elements"
+  (let [vs (remove nil? (map #(mreduce % m :min) mseq))]
+    (when-not (empty? vs) (apply min vs))))
+
+(defmethod reduce-mseq :total [m rfn mseq]
+  "Returns the total value for the given metric in mseq's elements"
+  (let [vs (remove nil? (map #(mreduce % m :total) mseq))]
+    (when-not (empty? vs) (apply + vs))))
 
 (defn- sseq-ctor
   "Creates a sorted seq based on the given coll and the dtval fn to call on
@@ -221,7 +251,6 @@
   "The set of supported sport types"
   #{:running :cycling})
 
-
 (defn measured?
   "Tests if x implements the IMeasured interface"
   [x]
@@ -237,7 +266,6 @@
    instead of a single reading (e.g. :distance and :calories vs :speed)"
   [m]
   (contains? #{:distance :calories :steps} m))
-
 
 (defmulti mseq
   "Takes a coll of measured or point-val elements and returns a sorted
@@ -259,14 +287,19 @@
       #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (mapcat metrics) distinct))
-      (track [this m] (mseq (mapcat #(track % m) this)))
+      (track [this m] (mapcat #(track % m) this))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [_]
         (reify IInterval
           (dtstart [this]
             (some-> cs first dtval))
           (duration [this]
-            (reduce + (map #(-> % interval duration) cs)))))
+            (when-let [f (first cs)]
+              (time/in-millis
+               (time/interval (dtval f)
+                              (tc/from-long
+                               (+ (tc/to-long (dtval (last cs)))
+                                  (-> (last cs) interval duration)))))))))
       (mreduce [this m rfn] (reduce-mseq m rfn this)))))
 
 (defmethod mseq :point-val [coll]
@@ -279,7 +312,7 @@
       #+cljs (-seq [this] cs)
       IMeasured
       (metrics [this] (->> this (map metric) distinct))
-      (track [this m] (mseq (filter #(= (metric %) m) cs)))
+      (track [this m] (filter #(= (metric %) m) cs))
       (tracked? [this m] (not (empty? (track this m))))
       (interval [this]
         (reify IInterval
@@ -287,7 +320,7 @@
             (some-> cs first dtval))
           (duration [this]
             (when-let [f (first cs)]
-              (time/in-seconds (time/interval (dtval f) (dtval (last cs))))))))
+              (time/in-millis (time/interval (dtval f) (dtval (last cs))))))))
       (mreduce [this m rfn] (reduce-pvseq m rfn this)))))
 
 (defmethod mseq :default [_])
@@ -321,13 +354,41 @@
    intervals. Each interval will have a start/end point interpolated from 
    the surrounding points. All other metrics are also split at this instant"
   [md m v]
-  (when (and (measured? md) (acc-metric? m) (tracked? md m))
-    (loop [mtk (track md m), acc v, sp []]
-      (let [[under over] (split-with #(<= (value %) acc) mtk)
-            x (interpolate (last under) (first over) acc)]
+  (letfn [(between [pvseq dtstart dtend]
+            (filter #(and (>= (tc/to-long (inst %))
+                              (tc/to-long dtstart))
+                          (<= (tc/to-long (inst %))
+                              (tc/to-long dtend)))
+                    pvseq))
+          (make-split [mtk]
+            (let [other (map (fn [x] {x {:track (between (track md x)
+                                                         (-> mtk first inst)
+                                                         (-> mtk last inst))}})
+                             (->> (metrics md)
+                                  (remove #(= m %))
+                                  (filter #(tracked? md %))))
+                  mets (apply merge {m {:track mtk}} other)]
+              (reify IMeasured
+                (metrics [this] (keys mets))
+                (track [this m] (:track (m mets)))
+                (tracked? [this m] (contains? mets m))
+                (interval [this]
+                  (reify IInterval
+                    (dtstart [_] (inst (first mtk)))
+                    (duration [_]
+                      (time/in-millis (time/interval (-> mtk first inst)
+                                                     (-> mtk last inst))))))
+                (mreduce [this m rfn] (reduce-pvseq m rfn (track this m))))))]
+
+    (when (and (measured? md) (acc-metric? m) (tracked? md m))
+      (loop [mtk (track md m), acc v, sp []]
+        (let [[under over] (split-with #(<= (value %) acc) mtk)
+              x (interpolate (last under) (first over) acc)]
           (if (empty? over)
-            (mseq (map mseq (conj sp under)))
-            (recur (cons x over) (+ acc v) (conj sp (cons x under))))))))
+            (mseq (conj sp (make-split under)))
+            (recur (cons x over) 
+                   (+ acc v)
+                   (conj sp (make-split (conj (vec under) x))))))))))
 
 (defn speed
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -359,9 +420,9 @@
                                     prev-inst (inst (first dist-trk))
                                     prev-dist (value (first dist-trk))]
                                (if (empty? dist-trk)
-                                 (mseq pace-trk)
+                                 pace-trk
                                  (let [v (first dist-trk)
-                                       secs (time/in-seconds
+                                       secs (time/in-millis
                                              (time/interval prev-inst (inst v)))
                                        dist (- (value v) prev-dist)
                                        p (double (if-not (zero? dist)
@@ -378,10 +439,10 @@
       (contains? (metrics md) :speed)    (let [s (or (mreduce md :speed rfn) 0)]
                                            (when-not (zero? s)
                                              (double (/ 1.0 s))))
-      (contains? (metrics md) :distance) (let [secs (or (duration (interval md)) 0)
+      (contains? (metrics md) :distance) (let [millis (or (duration (interval md)) 0)
                                                dist (or (mreduce md :distance rfn) 0)]
                                            (when-not (zero? dist)
-                                             (double (/ secs dist)))))))
+                                             (double (/ (/ millis 1000) dist)))))))
 
 (defn calories
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -490,7 +551,7 @@
                   :segments [segment]
                   s/Keyword s/Any}
         db {(s/optional-key :activities) [activity]}]
-    (s/validate db in)))
+    (nil? (s/check db in))))
 
 (defn build
   "Takes a data structure as checked by valid-sweat? and yields a mostly
@@ -507,7 +568,7 @@
              {:instant (:instant pv), :value (m pv), :metric m}))
           (metric [m v]
             {m 
-             (merge v (when-let [t (mseq (map #(point-val % m) (:track v)))]
+             (merge v (when-let [t (map #(point-val % m) (:track v))]
                         {:track t}))})
           (segment [s]
             (map->Segment
