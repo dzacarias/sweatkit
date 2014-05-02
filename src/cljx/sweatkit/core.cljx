@@ -405,44 +405,20 @@
    standard behavior: :avg, :max, :min.
 
    If the measured obj doesn't have this metric itself, this fn tries to get
-   it via the :speed and :distance metrics (in that order), in case they exist.
-   In these cases, the returned values will be limited to the data that is
-   available for :speed or :distance."
+   it via the :speed metric, in case it exists."
   ([md] 
      (cond
       (tracked? md :pace)    (track md :pace)
       (tracked? md :speed)   (map #(->PointValue (inst %)
                                                  (/ 1.0 (value %))
                                                  :pace)
-                                  (track md :speed)))
-     (tracked? md :distance) (loop [dist-trk (track md :distance)
-                                    pace-trk []
-                                    prev-inst (inst (first dist-trk))
-                                    prev-dist (value (first dist-trk))]
-                               (if (empty? dist-trk)
-                                 pace-trk
-                                 (let [v (first dist-trk)
-                                       secs (time/in-millis
-                                             (time/interval prev-inst (inst v)))
-                                       dist (- (value v) prev-dist)
-                                       p (double (if-not (zero? dist)
-                                                   (/ secs dist)
-                                                   0))]
-                                   (recur (next dist-trk)
-                                          (conj pace-trk
-                                                (->PointValue (inst v) p :pace))
-                                          (inst v)
-                                          (value v))))))
+                                  (track md :speed))))
   ([md rfn] 
      (cond
       (contains? (metrics md) :pace)     (mreduce md :pace rfn)
       (contains? (metrics md) :speed)    (let [s (or (mreduce md :speed rfn) 0)]
                                            (when-not (zero? s)
-                                             (double (/ 1.0 s))))
-      (contains? (metrics md) :distance) (let [millis (or (duration (interval md)) 0)
-                                               dist (or (mreduce md :distance rfn) 0)]
-                                           (when-not (zero? dist)
-                                             (double (/ (/ millis 1000) dist)))))))
+                                             (double (/ 1.0 s)))))))
 
 (defn calories
   "Takes a measured object and an optional reducing fn. When the fn is not
