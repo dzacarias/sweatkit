@@ -39,7 +39,7 @@
 ;; Datatypes
 ;; =============================================================================
 
-(declare reduce-pvseq)
+(declare reduce-pvseq reduce-mseq mkind)
 
 (defrecord ^:private Activity
     [dtstart annotations segments]
@@ -78,10 +78,80 @@
   (value [this] value)
   (metric [this] metric))
 
+(declare seq-metrics seq-track seq-tracked? seq-interval seq-mreduce)
+
+(extend-protocol IMeasured
+  #+clj  clojure.lang.LazySeq
+  #+cljs  cljs.core.LazySeq
+  (metrics [this] (seq-metrics this))
+  (track [this m] (seq-track this m))
+  (tracked? [this m] (seq-tracked? this m))
+  (interval [this] (seq-interval this))
+  (mreduce [this m rfn] (seq-mreduce this m rfn))
+
+  #+clj  clojure.lang.APersistentVector
+  #+cljs cljs.core.PersistentVector
+  (metrics [this] (seq-metrics this))
+  (track [this m] (seq-track this m))
+  (tracked? [this m] (seq-tracked? this m))
+  (interval [this] (seq-interval this))
+  (mreduce [this m rfn] (seq-mreduce this m rfn))
+
+  #+clj  clojure.lang.PersistentList
+  #+cljs cljs.core.List
+  (metrics [this] (seq-metrics this))
+  (track [this m] (seq-track this m))
+  (tracked? [this m] (seq-tracked? this m))
+  (interval [this] (seq-interval this))
+  (mreduce [this m rfn] (seq-mreduce this m rfn)))
 
 ;; -----------------------------------------------------------------------------
 ;; Private API
 ;; =============================================================================
+
+(defn- seq-metrics [s]
+  (condp = (mkind s)
+    :measured (->> s (mapcat metrics) distinct)
+    :point-val (->> s (map metric) distinct)
+    (throw (ex-info "Object is not Measurable" {:type (type s)}))))
+
+(defn- seq-track [s m]
+  (condp = (mkind s)
+    :measured (mapcat #(track % m) s)
+    :point-val (filter #(= (metric %) m) s)
+    (throw (ex-info "Object is not Measurable" {:type (type s)}))))
+
+(defn- seq-tracked? [s m]
+  (if-not (nil? (mkind s))
+    (not (empty? (track s m)))
+    (throw (ex-info "Object is not Measurable" {:type (type s)}))))
+
+(defn- seq-interval [s]
+  (let [k (mkind s)
+        dtval (condp = k
+                :measured  #(dtstart (interval %))
+                :point-val #(inst %)
+                :default)
+        cs (sort #(compare (dtval %1) (dtval %2)) s)]
+    (if-not (nil? k)
+      (reify IInterval
+        (dtstart [this]
+          (some-> cs first dtval))
+        (duration [this]
+          (when-let [f (first cs)]
+            (time/in-millis
+             (time/interval (dtval f)
+                            (tc/from-long
+                             (+ (tc/to-long (dtval (last cs)))
+                                (if (= k :measured)
+                                  (-> (last cs) interval duration) 0))))))))
+      (throw (ex-info "Object is not Measurable" {:type (type s)})))))
+
+(defn- seq-mreduce [s m rfn]
+  (condp = (mkind s)
+    :measured (reduce-mseq m rfn s)
+    :point-val (reduce-pvseq m rfn s)
+    (throw (ex-info "Object is not Measurable" {:type (type s)}))))
 
 (defn- sma-lin
   "Simple Moving Average with linear interpolation.
@@ -146,6 +216,18 @@
                   out-new (conj out (/ roll-area-new tau))]
               (recur left-new left-area-new (inc right) roll-area-new out-new))
             out))))))
+
+(declare measured? point-val?)
+
+(defn- mkind [coll]
+  "Takes a collection and returns its measurable kind:
+     :measured if every elem is an IMeasured
+     :point-val if every elem is an IPointValue
+     nil otherwise"
+  (when-not (empty? coll) 
+    (cond
+     (every? measured? coll) :measured
+     (every? point-val? coll) :point-val)))
 
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
@@ -227,12 +309,84 @@
   (let [vs (remove nil? (map #(mreduce % m :total) mseq))]
     (when-not (empty? vs) (apply + vs))))
 
-(defn- sseq-ctor
-  "Creates a sorted seq based on the given coll and the dtval fn to call on
-   each item for comparison"
-  [coll dtval]
-  (sort #(compare (dtval %1) (dtval %2)) (seq coll)))
-                                        
+(defmulti ^:private linear-itp
+  (fn [_ _ _ y1 y3]
+    (cond
+     (and (number? y1) (number? y3)) :number
+     (and (map? y1) (map? y3)) :geo)))
+
+(defmethod linear-itp :number [x1 x2 x3 y1 y3]
+  (double (+ y1 (* (- y3 y1) (/ (- x2 x1) (- x3 x1))))))
+
+(defmethod linear-itp :geo [x1 x2 x3 y1 y3]
+  {:lat (linear-itp x1 x2 x3 (:lat y1) (:lat y3))
+   :lng (linear-itp x1 x2 x3 (:lng y1) (:lng y3))})
+
+(defn- interpolate
+  "Takes two point-vals and an intermediate numeric value or instant.
+   If given a numeric value, it yields a new point-val with an interpolated
+   instant.
+   If given an instant, it yields a new point-val with an interpolated
+   numeric value."
+  [pv1 pv2 v]
+  (when-not (or (nil? pv1) (nil? pv2) (nil? v))
+      (cond
+       (number? v) (->PointValue 
+                    (tc/from-long
+                     (Math/round
+                      (linear-itp (value pv1)
+                                  v
+                                  (value pv2)
+                                  (tc/to-long (inst pv1))
+                                  (tc/to-long (inst pv2)))))
+                    v
+                    (metric pv1))
+       (satisfies?
+         time/DateTimeProtocol v) (->PointValue
+                                   v
+                                   (linear-itp (tc/to-long (inst pv1))
+                                               (tc/to-long v)
+                                               (tc/to-long (inst pv2))
+                                               (value pv1)
+                                               (value pv2))
+                                   (metric pv1)))))
+
+(defn- split-between [pvseq dtstart dtend]
+  (let [under (filter #(< (tc/to-long (inst %)) (tc/to-long dtstart)) pvseq)
+        over (filter #(> (tc/to-long (inst %)) (tc/to-long dtend)) pvseq)
+        between (filter #(and (>= (tc/to-long (inst %))
+                                  (tc/to-long dtstart))
+                              (<= (tc/to-long (inst %))
+                                  (tc/to-long dtend)))
+                        pvseq)]
+    (remove nil?
+            (conj (vec (cons (interpolate (last under) (first between) dtstart)
+                             between))
+                  (interpolate (last between) (first over) dtend)))))
+
+(defn- make-split [md mtk]
+  (when-not (empty? mtk)
+    (let [m (-> mtk first metric)
+          dtstart (-> mtk first inst)
+          dtend (-> mtk last inst)
+          other (map #(let [s (split-between (track md %) dtstart dtend)]
+                        (when-not (empty? s)
+                          {(metric (first s))
+                           {:track s}}))
+                     (->> (metrics md)
+                          (remove #(= m %))
+                          (filter #(tracked? md %))))
+          mets (apply merge {m {:track mtk}} other)]
+      (reify IMeasured
+        (metrics [this] (keys mets))
+        (track [this m] (:track (m mets)))
+        (tracked? [this m] (contains? mets m))
+        (interval [this]
+          (reify IInterval
+            (dtstart [_] dtstart)
+            (duration [_] (time/in-millis (time/interval dtstart dtend)))))
+        (mreduce [this m rfn] (reduce-pvseq m rfn (track this m)))))))
+
 ;; -----------------------------------------------------------------------------
 ;; Public API
 ;; =============================================================================
@@ -254,7 +408,9 @@
 (defn measured?
   "Tests if x implements the IMeasured interface"
   [x]
-  (satisfies? IMeasured x))
+  (if (sequential? x)
+    (not (nil? (mkind x)))
+    (satisfies? IMeasured x)))
 
 (defn point-val?
   "Tests if x implements the IPointValue interface"
@@ -267,83 +423,6 @@
   [m]
   (contains? #{:distance :calories :steps} m))
 
-(defmulti mseq
-  "Takes a coll of measured or point-val elements and returns a sorted
-   seq (by time), implementing the IMeasured protocol, or 'mseq' as shorthand.
-   If coll is not at a coll or it's empty, it returns nil"
-  (fn [coll]
-    (when (and (coll? coll) (not (empty? coll)))
-      (cond
-       (every? measured? coll) :measured
-       (every? point-val? coll) :point-val))))
-
-(defmethod mseq :measured [coll]
-  (let [dtval #(dtstart (interval %))
-        cs (sseq-ctor coll dtval)]
-    (reify
-      #+clj  clojure.lang.Seqable
-      #+clj  (seq [this] cs)
-      #+cljs ISeqable
-      #+cljs (-seq [this] cs)
-      IMeasured
-      (metrics [this] (->> this (mapcat metrics) distinct))
-      (track [this m] (mapcat #(track % m) this))
-      (tracked? [this m] (not (empty? (track this m))))
-      (interval [_]
-        (reify IInterval
-          (dtstart [this]
-            (some-> cs first dtval))
-          (duration [this]
-            (when-let [f (first cs)]
-              (time/in-millis
-               (time/interval (dtval f)
-                              (tc/from-long
-                               (+ (tc/to-long (dtval (last cs)))
-                                  (-> (last cs) interval duration)))))))))
-      (mreduce [this m rfn] (reduce-mseq m rfn this)))))
-
-(defmethod mseq :point-val [coll]
-  (let [dtval #(inst %)
-        cs (sseq-ctor coll dtval)]
-    (reify
-      #+clj  clojure.lang.Seqable
-      #+clj  (seq [this] cs)
-      #+cljs ISeqable
-      #+cljs (-seq [this] cs)
-      IMeasured
-      (metrics [this] (->> this (map metric) distinct))
-      (track [this m] (filter #(= (metric %) m) cs))
-      (tracked? [this m] (not (empty? (track this m))))
-      (interval [this]
-        (reify IInterval
-          (dtstart [this]
-            (some-> cs first dtval))
-          (duration [this]
-            (when-let [f (first cs)]
-              (time/in-millis (time/interval (dtval f) (dtval (last cs))))))))
-      (mreduce [this m rfn] (reduce-pvseq m rfn this)))))
-
-(defmethod mseq :default [_])
-
-(defn interpolate
-  "Takes two point-vals and an intermediate value. Yields a new
-   point-val with an interpolated instant for the given value, if both
-   points are non-nil."
-  [pv1 pv2 v]
-  (when (and (not (nil? pv1)) (not (nil? pv2))
-             (acc-metric? (metric pv1))
-             (acc-metric? (metric pv2)))
-    (->PointValue 
-     (tc/from-long
-      (Math/round
-       (double (+ (tc/to-long (inst pv1))
-                  (* (- (tc/to-long (inst pv2))
-                        (tc/to-long (inst pv1)))
-                     (/ (- v (value pv1))
-                        (- (value pv2) (value pv1))))))))
-     v
-     (metric pv1))))
-
 (defn splits
   "Takes a measured object, an accumulator metric and the split value.
    
@@ -352,43 +431,18 @@
 
    Otherwise, returns a seq of IMeasured objects, representing the split
    intervals. Each interval will have a start/end point interpolated from 
-   the surrounding points. All other metrics are also split at this instant"
+   the surrounding points. All other metrics are also split at these instants"
   [md m v]
-  (letfn [(between [pvseq dtstart dtend]
-            (filter #(and (>= (tc/to-long (inst %))
-                              (tc/to-long dtstart))
-                          (<= (tc/to-long (inst %))
-                              (tc/to-long dtend)))
-                    pvseq))
-          (make-split [mtk]
-            (let [other (map (fn [x] {x {:track (between (track md x)
-                                                         (-> mtk first inst)
-                                                         (-> mtk last inst))}})
-                             (->> (metrics md)
-                                  (remove #(= m %))
-                                  (filter #(tracked? md %))))
-                  mets (apply merge {m {:track mtk}} other)]
-              (reify IMeasured
-                (metrics [this] (keys mets))
-                (track [this m] (:track (m mets)))
-                (tracked? [this m] (contains? mets m))
-                (interval [this]
-                  (reify IInterval
-                    (dtstart [_] (inst (first mtk)))
-                    (duration [_]
-                      (time/in-millis (time/interval (-> mtk first inst)
-                                                     (-> mtk last inst))))))
-                (mreduce [this m rfn] (reduce-pvseq m rfn (track this m))))))]
-
-    (when (and (measured? md) (acc-metric? m) (tracked? md m))
-      (loop [mtk (track md m), acc v, sp []]
-        (let [[under over] (split-with #(<= (value %) acc) mtk)
-              x (interpolate (last under) (first over) acc)]
-          (if (empty? over)
-            (mseq (conj sp (make-split under)))
-            (recur (cons x over) 
-                   (+ acc v)
-                   (conj sp (make-split (conj (vec under) x))))))))))
+  (when (and (measured? md) (acc-metric? m) (tracked? md m))
+    (loop [mtk (track md m), acc v, sp []]
+      (let [[under over] (split-with #(<= (value %) acc) mtk)
+            x (interpolate (last under) (first over) acc)
+            s (if x (conj (vec under) x) (vec under))]
+        (if (empty? over)
+          (conj sp (make-split md s))
+          (recur (cons x over) 
+                 (+ acc v)
+                 (conj sp (make-split md s))))))))
 
 (defn speed
   "Takes a measured object and an optional reducing fn. When the fn is not
@@ -529,7 +583,7 @@
         db {(s/optional-key :activities) [activity]}]
     (nil? (s/check db in))))
 
-(defn build
+(defn db
   "Takes a data structure as checked by valid-sweat? and yields a mostly
    identical new one, with the following features:
    * The :activities coll is turned into an mseq (sorted IMeasured) and its
@@ -552,7 +606,7 @@
                                                (metric m v)))})))
           (activity [a]
             (map->Activity
-             (merge a {:segments (mseq (map segment (:segments a)))})))]
+             (merge a {:segments (map segment (:segments a))})))]
 
     (when (valid-sweat? in)
-      {:activities (mseq (map activity (:activities in)))})))
+      {:activities (map activity (:activities in))})))
