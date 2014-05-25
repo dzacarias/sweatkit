@@ -1,4 +1,4 @@
-# sweatkit
+# sweatkit [![Build Status](https://travis-ci.org/dzacarias/sweatkit.svg?branch=master)](https://travis-ci.org/dzacarias/sweatkit)
 
 sweatkit is a Clojure(Script) library to work with sports activities data.
 
