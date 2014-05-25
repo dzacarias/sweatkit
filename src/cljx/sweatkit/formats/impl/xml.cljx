@@ -34,8 +34,8 @@
 (defn parse
   "Takes a String, representing an XML document and returns a
    clojure.xml-compatible data structure"
-  [doc]
-  (let [doc (xml/loadXml doc)
+  [s]
+  (let [doc (xml/loadXml s)
         root (.-documentElement doc)]
     (loop [parent root
            node (.-firstElementChild parent)

@@ -1,4 +1,8 @@
 (ns sweatkit.core
+  "Provides the basic abstractions and fns to polymorphically work with sports
+   activity data: i.e. extracting the usual fitness metrics (like Speed, HR,
+   Altitude, Distance) out of collections of activities, individual activities
+   or small time segments within them."
   (:require  [clojure.set :as st]
       #+clj  [clj-time.core :as time]
       #+cljs [cljs-time.core :as time]
@@ -41,7 +45,7 @@
 
 (declare reduce-pvseq reduce-mseq mkind)
 
-(defrecord ^:private Activity
+(defrecord Activity
     [dtstart annotations segments]
   ISports
   (sports [this]
@@ -56,7 +60,7 @@
   (interval [this] this)
   (mreduce [_  m rfn] (mreduce segments m rfn)))
 
-(defrecord ^:private Segment
+(defrecord Segment
     [dtstart duration sport annotations metrics]
   IInterval
   (dtstart [_] dtstart)
@@ -67,16 +71,23 @@
   (track [this m] (:track (m metrics)))
   (interval [this] this)
   (mreduce [this m rfn]
-    (if (tracked? this m)
-      (reduce-pvseq m rfn (track this m))
-      (when (keyword? rfn) (rfn (m metrics))))))
+    (if (and (keyword? rfn) (rfn (m metrics)))
+      (rfn (m metrics))
+      (when (tracked? this m) (reduce-pvseq m rfn (track this m))))))
 
-(defrecord ^:private PointValue
+(defrecord PointValue
     [instant value metric]
   IPointValue
   (inst [this] instant)
   (value [this] value)
   (metric [this] metric))
+
+#+clj (alter-meta! #'->Activity assoc :no-doc true)
+#+clj (alter-meta! #'map->Activity assoc :no-doc true)
+#+clj (alter-meta! #'->Segment assoc :no-doc true)
+#+clj (alter-meta! #'map->Segment assoc :no-doc true)
+#+clj (alter-meta! #'->PointValue assoc :no-doc true)
+#+clj (alter-meta! #'map->PointValue assoc :no-doc true)
 
 (declare seq-metrics seq-track seq-tracked? seq-interval seq-mreduce)
 
@@ -139,14 +150,15 @@
           (some-> cs first dtval))
         (duration [this]
           (when-let [f (first cs)]
-            (time/in-millis
+            (time/in-seconds
              (time/interval (dtval f)
                             (tc/from-long
                              (+ (tc/to-long (dtval (last cs)))
                                 (if (= k :measured)
-                                  (-> (last cs) interval duration) 0))))))))
+                                  (-> (last cs) interval duration (* 1000))
+                                  0))))))))
       (throw (ex-info "Object is not Measurable" {:type (type s)})))))
-
+          
 (defn- seq-mreduce [s m rfn]
   (condp = (mkind s)
     :measured (reduce-mseq m rfn s)
@@ -155,7 +167,8 @@
 
 (defn- sma-lin
   "Simple Moving Average with linear interpolation.
-   Takes a PointValue seq and a parameter for window size in milliseconds.
+   Takes a PointValue seq and a parameter for window size in seconds (can
+   be fractional).
    Returns a seq of values, corresponding to the SMAlin over time.
 
    It's implemented based on Andreas Eckner's work describing how to
@@ -217,7 +230,7 @@
               (recur left-new left-area-new (inc right) roll-area-new out-new))
             out))))))
 
-(declare measured? point-val?)
+(declare measured? point-val? acc-metric?)
 
 (defn- mkind [coll]
   "Takes a collection and returns its measurable kind:
@@ -250,7 +263,8 @@
   (let [window-size 60000.0 ; (60 second)
         roll-vals (sma-lin (filter #(= m (metric %)) pvseq)
                            window-size)]
-    (/ (reduce + roll-vals) (count roll-vals))))
+    (when-not (empty? roll-vals)
+      (/ (reduce + roll-vals) (count roll-vals)))))
 
 (defmethod reduce-pvseq :min [m _ pvseq]
   "Returns the minimum value in the pvseq"
@@ -266,7 +280,10 @@
   "Returns the final (total) value for the pvseq.
    Useful for accumulating metrics"
   (let [vs (map value (filter #(= m (metric %)) pvseq))]
-    (when-not (empty? vs) (apply max vs))))
+    (when-not (empty? vs)
+      (if (acc-metric? m)
+        (- (apply max vs) (apply min vs))
+        (apply max vs)))))
 
 (defmulti ^:private reduce-mseq
   "IMeasured seqs can be reduced to extract useful global values.
@@ -288,11 +305,14 @@
    element's average value is weighted by its interval duration"
   (let [vals (remove nil? (map #(let [avg (mreduce % m :avg)
                                       dur (-> % interval duration)]
+                                  
                                   (when avg
                                     (hash-map :val (* dur avg) :itv dur)))
-                               mseq))]
-    (float (/ (apply + (map :val vals))
-              (apply + (map :itv vals))))))
+                               mseq))
+        denominators (map :itv vals)]
+    (when-not (empty? denominators)
+      (float (/ (apply + (map :val vals))
+                (apply + denominators))))))
 
 (defmethod reduce-mseq :max [m rfn mseq]
   "Returns the max value for the given metric in mseq's elements"
@@ -351,7 +371,11 @@
                                                (value pv2))
                                    (metric pv1)))))
 
-(defn- split-between [pvseq dtstart dtend]
+(defn- split-between
+  "Takes a point-val seq and splits it between given dtstart and dtend. It creates
+   new point-vals at the given instants, interpolating their metric values through
+   their surrounding point-vals"
+  [pvseq dtstart dtend]
   (let [under (filter #(< (tc/to-long (inst %)) (tc/to-long dtstart)) pvseq)
         over (filter #(> (tc/to-long (inst %)) (tc/to-long dtend)) pvseq)
         between (filter #(and (>= (tc/to-long (inst %))
@@ -364,7 +388,21 @@
                              between))
                   (interpolate (last between) (first over) dtend)))))
 
-(defn- make-split [md mtk]
+(defn- rebase-track
+  "Takes a pvseq and in case it holds an acc-metric, maps over the seq and
+   produces new point vals rebased by subtracting from each the initial value"
+  [mtk]
+  (if (and (not (empty? mtk)) (acc-metric? (-> mtk first metric)))
+    (let [b (-> mtk first value)]
+      (map #(->PointValue (inst %) (- (value %) b) (metric %)) mtk))
+    mtk))
+
+(defn- make-split
+  "Helper fn to produce a Split for some IMeasured. It takes a measured obj
+   and a metric track. It walks over all of the other metric tracks and splits
+   them at the same start/end instants as the given metric track. All of these
+   are then used for the reified IMeasured obj that this fn returns"
+  [md mtk]
   (when-not (empty? mtk)
     (let [m (-> mtk first metric)
           dtstart (-> mtk first inst)
@@ -372,19 +410,19 @@
           other (map #(let [s (split-between (track md %) dtstart dtend)]
                         (when-not (empty? s)
                           {(metric (first s))
-                           {:track s}}))
+                           {:track (rebase-track s)}}))
                      (->> (metrics md)
                           (remove #(= m %))
                           (filter #(tracked? md %))))
-          mets (apply merge {m {:track mtk}} other)]
+          mets (apply merge {m {:track (rebase-track mtk)}} other)]
       (reify IMeasured
         (metrics [this] (keys mets))
         (track [this m] (:track (m mets)))
-        (tracked? [this m] (contains? mets m))
+        (tracked? [this m] (some #{m} mets))
         (interval [this]
           (reify IInterval
             (dtstart [_] dtstart)
-            (duration [_] (time/in-millis (time/interval dtstart dtend)))))
+            (duration [_] (time/in-seconds (time/interval dtstart dtend)))))
         (mreduce [this m rfn] (reduce-pvseq m rfn (track this m)))))))
 
 ;; -----------------------------------------------------------------------------
@@ -424,14 +462,17 @@
   (contains? #{:distance :calories :steps} m))
 
 (defn splits
-  "Takes a measured object, an accumulator metric and the split value.
+  "Takes a measured object, an accumulator metric and a split value and
+   returns a seq of IMeasured objects, representing the split intervals.
+   Each interval will have a start/end point corresponding to the accumulator
+   metric/value steps, and instants calculated by interpolation from 
+   the surrounding points.
+   All other metrics are also split between these instants and are included
+   in the IMeasured object, if they have metric tracks. If they only have
+   reduced values (such as max or avg), they are ignored.
    
-   If the metric is not an accumulator, or there's no track for it, this fn
-   returns nil.
-
-   Otherwise, returns a seq of IMeasured objects, representing the split
-   intervals. Each interval will have a start/end point interpolated from 
-   the surrounding points. All other metrics are also split at these instants"
+   If the given metric is not an accumulator, or there's no track for it,
+   this fn will return nil."
   [md m v]
   (when (and (measured? md) (acc-metric? m) (tracked? md m))
     (loop [mtk (track md m), acc v, sp []]
@@ -469,8 +510,8 @@
                                   (track md :speed))))
   ([md rfn] 
      (cond
-      (contains? (metrics md) :pace)     (mreduce md :pace rfn)
-      (contains? (metrics md) :speed)    (let [s (or (mreduce md :speed rfn) 0)]
+      (some #{:pace} (metrics md)) (mreduce md :pace rfn)
+      (some #{:speed} (metrics md)) (let [s (or (mreduce md :speed rfn) 0)]
                                            (when-not (zero? s)
                                              (double (/ 1.0 s)))))))
 
@@ -533,15 +574,19 @@
   ([md] (track md :distance))
   ([md rfn] (mreduce md :distance rfn)))
 
+(defn position
+  "Takes a measured object and yields the whole Position track, if it exists"
+  [md] (track md :position))
+
 (defn valid-sweat?
-  "Takes a data structure and checks if it conforms to sweatkit's format:
+  "Takes a data structure and checks if it conforms to sweatkit's db format:
    A map with these keys and values:
     :activities => Collection of maps like this:
         :dtstart => DateTime - starting instant
         :annotations => Map - Relevant annotations
         :segments => Collection of maps like this:
            :dtstart => Starting instant (DateTime)
-           :duration => Number of milliseconds (Integer)
+           :duration => Number of seconds (Double)
            :active => Was this an active period? (Boolean)
            :trigger => What caused this segment? (An element from trigger-types)
            :annotations => Map with relevant annotations
@@ -586,12 +631,10 @@
 (defn db
   "Takes a data structure as checked by valid-sweat? and yields a mostly
    identical new one, with the following features:
-   * The :activities coll is turned into an mseq (sorted IMeasured) and its
-     elements are also IMeasured (via Activity record)
-   * The :segments coll in each Activity is also made an mseq, with each of 
-     elements also becoming IMeasured (via Segment record) 
-   * All metric tracks are also made mseqs and their items made IPointValues
-     record"
+   * The :activities vector implements the IMeasured protocol, as well as 
+     its elements
+   * The :segments coll is also an IMeasured, as well as each of its elementsb
+   * All metric tracks are also made IMeasured and their items are IPointValues"
   [in]
   (letfn [(point-val [pv m]
             (map->PointValue

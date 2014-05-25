@@ -1,5 +1,7 @@
 (ns sweatkit.core-test
   (:require [sweatkit.core :as sk]
+            [sweatkit.formats.tcx :as tcx]
+            [sweatkit.test-util :as util]
             #+clj  [clojure.test :as t :refer :all]  
             #+cljs [cemerick.cljs.test :as t]
             #+clj  [clj-time.coerce :as tc]
@@ -15,7 +17,7 @@
 
 (defn- make-metric [m dtstart duration]
   (map #(hash-map :instant (tc/from-long (+ (tc/to-long dtstart)
-                                            (min duration
+                                            (min (* 1000 duration)
                                                  (* 1000 (rand-int 5) (int %)))))
                   m (Math/abs (* 10 (Math/sin %))))
        (range 0 360 0.25)))
@@ -27,7 +29,7 @@
 
 (def segment-1
   (let [dtstart (tc/from-string "2013-08-07T03:10:21Z")
-        duration 4200000]
+        duration 4200]
     {:dtstart dtstart
      :duration duration
      :annotations {:title "A segment"}
@@ -43,7 +45,7 @@
 
 (def segment-2
   (let [dtstart (tc/from-string "2013-08-07T04:20:14Z")
-        duration 300000]
+        duration 300]
     {:dtstart dtstart
      :duration duration
      :sport :running
@@ -56,7 +58,7 @@
 
 (def segment-3
   (let [dtstart (tc/from-string "2013-08-07T04:25:14Z")
-        duration 6000000]
+        duration 6000]
     {:dtstart dtstart
      :duration duration
      :sport :running
@@ -94,7 +96,75 @@
     (let [db-1 (assoc-in sweat-db [:activities 0 :segments 0 :sport] nil)]
       (is (not (sk/valid-sweat? db-1))))))
 
-(deftest mseq-test
+(deftest splits-test
+  (testing "Should not split if there's no metric track"
+    (is (zero? (count (sk/splits
+                       (-> (sk/db sweat-db) :activities first)
+                       :distance
+                       1000)))))
+  (testing "Should not split if it's not an acc metric"
+    (is (zero? (count (sk/splits
+                       (-> (sk/db sweat-db) :activities first)
+                       :speed
+                       1000)))))
+  (let [a (-> (util/read-file "test-resources/tcx/FitnessHistoryDetail.tcx")
+              tcx/parse sk/db :activities first)]
+    (testing "Total splits should be correct for given metric split value"
+      (is (= 9 (count (sk/splits a :distance 1000))))
+      (is (= 84 (count (sk/splits a :distance 100)))))
+    (testing "Each split should have the given size, except for the last one"
+      (is (zero? (count (filter #(not= 100.0 (double %))
+                                (drop-last (map #(sk/distance % :total)
+                                                (sk/splits a :distance 100)))))))
+      (is (zero? (count (filter #(not= 1000.0 (double %))
+                                (drop-last (map #(sk/distance % :total)
+                                                (sk/splits a :distance 1000))))))))
+    (testing "Every metric should have the same dtstart/end as the split metric"
+      (doseq [x (sk/splits a :distance 1000)]
+        (let [st (sk/inst (first (sk/track x :distance)))
+              ed (sk/inst (last (sk/track x :distance)))]
+          (doseq [m (remove #(= % :distance) (sk/metrics x))]
+            (is (and (= st (sk/inst (first (sk/track x m))))
+                     (= ed (sk/inst (last (sk/track x m))))))))))
+    (testing "At split frontiers, values should be interpolated"
+      (let [sp (sk/splits a :distance 900)
+            a1 (last (drop-last (sk/altitude (first sp))))
+            i1 (last (sk/altitude (first sp)))
+            a2 (second (sk/altitude (second sp)))
+            i2 (first (sk/altitude (second sp)))]
+        (testing "Split frontiers should be equal"
+          (is (= i1 i2))
+          (is (= (sk/value a1) (sk/value a2))))
+        (testing "Frontier instant should come from split metric"
+          (is (= (sk/inst i1) (sk/inst (last (sk/distance (first sp)))))))
+        ; Linear interpolation:
+        ; (double (+ y0 (* (- y1 y0) (/ (- x x0) (- x1 x0)))))
+        (let [y0 (sk/value a1)
+              y1 (sk/value a2)
+              x (tc/to-long (sk/inst i1))
+              x0 (tc/to-long (sk/inst a1))
+              x1 (tc/to-long (sk/inst a2))]
+          (is (= (sk/value i1)
+                 (double (+ y0 (* (- y1 y0) (/ (- x x0) (- x1 x0))))))))))
+    (testing "At every split, metric value should be <= input split value"
+      (doseq [s (sk/splits a :distance 800)]
+        (is (zero? (count (filter #(> (sk/value %) 800) (sk/distance s)))))))
+    (testing "Only tracked metrics can be split"
+      (let [ntm (set (remove #(sk/tracked? a %) (sk/metrics a)))]
+        (doseq [sp (sk/splits a :distance 1000)
+                m (sk/metrics sp)]
+          (is (not (contains? ntm m))))))))
+
+(deftest metrics-test
+  (testing "Already reduced value should be used instead of track")
+  (testing "If track-only, return computed reduced value")
+  (testing "Using the helper fn should be the same as using mreduce")
+  (testing "Min should return the smallest value")
+  (testing "Max should return the largest value")
+  (testing "Avg should be between min and max")
+  (testing "Total should be the final val in an acc-metric pvseq")
+  (testing "Total should be the sum of acc-metric vals in an IMeasured seq")
+  (testing "Keyword default reducers should only be available where sensible")
   (testing "Measured sequence with a repeating measured element"
     (let [b (sk/db sweat-db)
           ref-act (-> b :activities first)
@@ -141,10 +211,6 @@
           (is (=f (sk/mreduce acts :speed :avg)
                   (float (/ (apply + (map :val vals))
                             (apply + (map :dur vals)))))))))))
-
-(deftest splits-test)
-
-(deftest metrics-test)
 
 (deftest predicates-test
   (testing "Should be true for a measured"

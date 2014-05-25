@@ -15,15 +15,20 @@ In a nutshell, sweatkit is a set of:
 - Composable abstractions and functions to work with sports activity data
 - Facilities to get data from/to different sports activities formats
 
-The library is motivated by the need to get the same kind of information from this data, on different time-scales (e.g., from a few seconds of a run to a collection of runs). 
+The library is motivated by the need to get the same kind of information from this data, on different time-scales (e.g., from a few seconds of a run to a collection of runs). Also, since this area is prolific in proprietary data silos, we need to support parsing/emitting from/to the most common data formats.
 
-Also, since this area is prolific in proprietary data silos, we need to support parsing/emitting from/to the most common data formats.
+## Documentation
+
+- [Wiki](https://github.com/dzacarias/sweatkit/wiki)
+- [API Docs](http://dzacarias.github.io/sweatkit/)
 
 ## Usage
 
+### Installation
+
 **Leiningen dependency info will be available here when there's an official release**
 
-### Examples
+### Some examples
 
 Let's start by parsing a TCX file into sweatkit's format:
 
@@ -41,16 +46,20 @@ Let's start by parsing a TCX file into sweatkit's format:
     ; -> Starting instant
     :dtstart #<DateTime 2007-08-07T02:42:41.000Z>,
     ; -> Any extra info
-    :annotations {:notes nil},
+    :annotations {:notes "A title"},
     ; -> The activity's segments (usually called "laps")
     :segments
     [{:metrics
-      {:altitude
+      {
+       ; -> Some metrics may only have global values
+       :speed {:max 18.6828499}, 
+       :calories {:total 285},
+       :altitude
        ; -> When there's a track of values for a metric, it appears like this:
        {:track 
         ({:altitude 3.982666,
           :instant #<DateTime 2007-08-07T02:42:41.000Z>}
-          ...
+          ; ...
           )},
        :distance
        {:track
@@ -60,12 +69,10 @@ Let's start by parsing a TCX file into sweatkit's format:
           :instant #<DateTime 2007-08-07T02:42:48.000Z>}
          {:distance 7.5551758,
           :instant #<DateTime 2007-08-07T02:42:54.000Z>}
-          ...
-          })},
-       ; -> Some metrics may only have global values
-       :speed {:max 18.6828499}, 
-       :calories {:total 285}},
-      :annotations {:notes nil},
+          ; ...
+          })}
+      },
+      :annotations {:notes "Some info on the segment"},
       ; -> What caused this segment to be created (manually or some metric)
       :trigger :manual,
       ; -> It was an active (not resting) period
@@ -91,8 +98,8 @@ To start using sweatkit, you take a map like the one described above and feed it
 ;; => true
 
 ; Get the available metrics
-(:calories :speed :position :distance :altitude)
-
+(s/metrics act)
+;; => (:calories :speed :position :distance :altitude)
 
 ; Get the average altitude
 (s/altitude act :avg)
@@ -111,20 +118,24 @@ To start using sweatkit, you take a map like the one described above and feed it
 Sequential collections containing IMeasured or IPointValue objects are extended to implement IMeasured, which allows you to do stuff like this:
 
 ```clojure
-; Getting a full metric track, getting Point Values
+; Getting a full metric track (seq of point values)
 (s/altitude act)
-;; => (#sweatkit.core.PointValue{:instant #<DateTime 2007-08-07T02:42:41.000Z>, :value 3.982666, :metric :altitude} #sweatkit.core.PointValue{:instant #<DateTime 2007-08-07T02:42:48.000Z>, :value 4.4632568, :metric :altitude}
- ; ...
- )
- 
-; This is seq implementing IMeasured
+;; => (#sweatkit.core.PointValue{:instant #<DateTime 2007-08-07T02:42:41.000Z>,
+;                                :value 3.982666,
+;                                :metric :altitude}
+;      #sweatkit.core.PointValue{:instant #<DateTime 2007-08-07T02:42:48.000Z>,
+;                                :value 4.4632568,
+;                                :metric :altitude}
+;      ...)
+
+; The seq implements IMeasured
 (s/measured? (take 3 (s/altitude act)))
 ;; => true
 
 ; Get the average altitude for the activity's first 10 trackpoints (each an IPointValue)
-(altitude (take 10 (altitude act)) :avg)
+(s/altitude (take 10 (s/altitude act)) :avg)
 
-; Get the activity's splits every 1000 meters (returns a vector of IMeasured)
+; Get the activity's splits every 1000 meters (returns a vector of IMeasured elems)
 (def sp (s/splits act :distance 1000))
 
 (count sp)
@@ -134,7 +145,9 @@ Sequential collections containing IMeasured or IPointValue objects are extended 
 (s/metrics sp)
 ; => (:altitude :position :distance)
 
-; Notice that the set of metrics is not the same as the activity's. When splitting an IMeasured, you only get back the metrics with tracks, because already reduces values (like max or avg) can't be split.
+; Notice that the set of metrics is not the same as the activity's. When splitting
+; an IMeasured, you only get back the metrics with tracks, because already
+; reduced values (like max or avg) can't be split.
 
 ; The split's global values are the same as the activity's:
 (s/distance act :total)
@@ -144,25 +157,10 @@ Sequential collections containing IMeasured or IPointValue objects are extended 
 ;; => 8349.8964844
 
 ; Since every split implements IMeasured, you can query it like anything else
+; Let's get the average altitude for the first 1K split:
 (s/altitude (first sp) :avg)
 ;; => 8.40672815097235
-
-
 ```
-
-## Documentation
-
-- Abstractions
-    - Measured interval
-    - Point value
-- Data Structures
-    - Activity
-    - Segment
-    - Metrics
-    - Point Value
-- Examples
-- API Docs
-
 ## Roadmap
 
 sweatkit's development will be driven mostly by needs that arise while working on a related project (TBA soon). To give you an idea of where we're headed, here's a list of features that we'd like to add over time:
