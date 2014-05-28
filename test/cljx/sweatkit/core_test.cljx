@@ -15,10 +15,15 @@
 ;; -----------------------------------------------------------------------------
 ;; Unit tests
 
+(defn- rand-inst
+  [i dtstart duration]
+  (tc/from-long (+ (tc/to-long dtstart)
+                   (min (* 1000 duration)
+                        (* 1000 (rand-int 5) (int i))))))
+
+
 (defn- make-metric [m dtstart duration]
-  (map #(hash-map :instant (tc/from-long (+ (tc/to-long dtstart)
-                                            (min (* 1000 duration)
-                                                 (* 1000 (rand-int 5) (int %)))))
+  (map #(hash-map :instant (rand-inst % dtstart duration)
                   m (Math/abs (* 10 (Math/sin %))))
        (range 0 360 0.25)))
 
@@ -40,7 +45,12 @@
                        :track (make-metric :speed dtstart duration)}
                :distance {:total 1000}
                :cadence {:avg 50}
-               :power {:max 100}}
+               :power {:max 100}
+               :steps {:track (map #(hash-map :steps %
+                                              :instant (rand-inst %
+                                                                  dtstart
+                                                                  duration))
+                                   (range 1 1000)) }}
      :other :stuff}))
 
 (def segment-2
@@ -52,7 +62,12 @@
      :active false
      :trigger :manual
      :metrics {:speed {:track (make-metric :speed dtstart duration)}
-               :distance {:total 500}}
+               :distance {:total 500}
+               :steps {:track (map #(hash-map :steps %
+                                              :instant (rand-inst %
+                                                                  dtstart
+                                                                  duration))
+                                   (range 1 200)) }}
      :power {:min 20}
      :some "other"}))
 
@@ -78,11 +93,9 @@
 (deftest db-test
   (testing "Valid format should be built"
     (is (sk/db sweat-db)))
-
   (testing "Invalid format should return empty db"
     (let [db-1 (assoc-in sweat-db [:activities 0 :segments 1 :metrics] nil)]
       (is (not (sk/db db-1)))))
-
   (testing "Should return an mseq of Activities and each should be measured"
     (let [b (sk/db sweat-db)]
       (is (sk/measured? (:activities b)))
@@ -91,7 +104,6 @@
 (deftest format-test
   (testing "Valid format should be true"
     (is (sk/valid-sweat? sweat-db)))
-
   (testing "Invalid format should be false"
     (let [db-1 (assoc-in sweat-db [:activities 0 :segments 0 :sport] nil)]
       (is (not (sk/valid-sweat? db-1))))))
@@ -156,19 +168,33 @@
           (is (not (contains? ntm m))))))))
 
 (deftest metrics-test
-  (testing "Already reduced value should be used instead of track")
-  (testing "If track-only, return computed reduced value")
-  (testing "Using the helper fn should be the same as using mreduce")
-  (testing "Min should return the smallest value")
-  (testing "Max should return the largest value")
-  (testing "Avg should be between min and max")
-  (testing "Total should be the final val in an acc-metric pvseq")
-  (testing "Total should be the sum of acc-metric vals in an IMeasured seq")
-  (testing "Keyword default reducers should only be available where sensible")
-  (testing "Measured sequence with a repeating measured element"
-    (let [b (sk/db sweat-db)
-          ref-act (-> b :activities first)
-          acts [ref-act ref-act ref-act]]
+  (let [b (sk/db sweat-db)
+        ref-act (-> b :activities first)
+        acts [ref-act ref-act ref-act]]
+    (testing "Already reduced value should be used instead of track"
+      (is (= 4.3 (-> b :activities first :segments first (sk/speed :max)))))
+    (testing "If track-only, return computed reduced value"
+      (let [s (-> b :activities first :segments second)]
+        (is (= (keys (-> s :metrics :speed)) '(:track)))
+        (is (not (nil? (sk/speed s :avg))))))
+    (testing "Using the helper fn should be the same as using mreduce"
+      (is (= (sk/mreduce ref-act :speed :avg) (sk/speed ref-act :avg)))
+      (is (= (sk/mreduce ref-act :speed :min) (sk/speed ref-act :min)))
+      (is (= (sk/mreduce ref-act :speed :max) (sk/speed ref-act :max)))
+      (is (= (sk/mreduce ref-act :distance :total) (sk/distance ref-act :total)))
+      (is (= (sk/mreduce ref-act :cadence :avg) (sk/cadence ref-act :avg)))
+      (is (= (sk/mreduce ref-act :cadence :min) (sk/cadence ref-act :min)))
+      (is (= (sk/mreduce ref-act :cadence :max) (sk/cadence ref-act :max)))
+      (is (= (sk/mreduce ref-act :power :avg) (sk/power ref-act :avg)))
+      (is (= (sk/mreduce ref-act :power :min) (sk/power ref-act :min)))
+      (is (= (sk/mreduce ref-act :power :max) (sk/power ref-act :max))))
+    (testing "Min should return the smallest value"
+      (is (= (sk/speed ref-act :min)
+             (apply min (map #(sk/value %) (sk/speed ref-act))))))
+    (testing "Max should return the largest value"
+      (is (= (sk/speed ref-act :max)
+             (apply max (map #(sk/value %) (sk/speed ref-act))))))
+    (testing "Measured sequence with a repeating measured element"
       (testing "Duration is equal to to the reference activity (has the same dtstart/dtend)"
         (is (= (-> acts sk/interval sk/duration)
                (-> ref-act sk/interval sk/duration))))
