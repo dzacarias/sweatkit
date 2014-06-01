@@ -26,7 +26,11 @@ The library is motivated by the need to get the same kind of information from th
 
 ### Installation
 
-**Leiningen dependency info will be available here when there's an official release**
+Using [Leiningen](http://leiningen.org), add this to your project's `:dependencies`:
+
+```clojure
+[sweatkit "0.1.0"]
+```
 
 ### Some examples
 
@@ -148,13 +152,6 @@ Sequential collections containing IMeasured or IPointValue objects are extended 
 ; Notice that the set of metrics is not the same as the activity's. When splitting
 ; an IMeasured, you only get back the metrics with tracks, because already
 ; reduced values (like max or avg) can't be split.
-
-; The split's global values are the same as the activity's:
-(s/distance act :total)
-;; => 8349.8964844
-
-(s/distance sp :total)
-;; => 8349.8964844
 
 ; Since every split implements IMeasured, you can query it like anything else
 ; Let's get the average altitude for the first 1K split:

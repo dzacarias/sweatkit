@@ -1,8 +1,10 @@
-(defproject sweatkit "0.1.0-SNAPSHOT"
+(defproject sweatkit "0.1.0"
   :description "A Clojure(Script) library to work with sports activities data"
   :url "https://github.com/dzacarias/sweatkit"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
+  :scm {:name "git"
+        :url "https://github.com/dzacarias/sweatkit"}
 
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/clojurescript "0.0-2202"]
@@ -37,7 +39,7 @@
                              [codox "0.8.7"]]
                    :hooks [cljx.hooks]
                    :aliases {"cleantest" ["do" "clean," "cljx" "once," "test," "cljsbuild" "test"]
-                             "deploy" ["do" "clean," "cljx" "once," "deploy" "clojars"]}}}
+                             "release" ["do" "clean," "cljx" "once," "deploy" "clojars"]}}}
 
   :cljsbuild { :builds [{:source-paths ["target/classes" "target/test-classes"]
                          :compiler {:output-to "target/js/advanced.js"
