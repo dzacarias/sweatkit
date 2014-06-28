@@ -7,10 +7,10 @@
         :url "https://github.com/dzacarias/sweatkit"}
 
   :dependencies [[org.clojure/clojure "1.6.0"]
-                 [org.clojure/clojurescript "0.0-2202"]
-                 [clj-time "0.6.0"]
-                 [com.andrewmcveigh/cljs-time "0.1.4"]
-                 [prismatic/schema "0.2.1"]]
+                 [org.clojure/clojurescript "0.0-2234"]
+                 [clj-time "0.7.0"]
+                 [com.andrewmcveigh/cljs-time "0.1.5"]
+                 [prismatic/schema "0.2.4"]]
 
   :cljx {:builds [{:source-paths ["src/cljx"]
                    :output-path "target/classes"
@@ -32,11 +32,11 @@
   :test-paths ["test/clj" "target/test-classes"]
   :jar-exclusions [#"\.cljx|\.DS_Store"]
 
-  :profiles {:dev {:plugins [[com.keminglabs/cljx "0.3.2"]
+  :profiles {:dev {:plugins [[com.keminglabs/cljx "0.4.0"]
                              [lein-cljsbuild "1.0.3"]
-                             [com.cemerick/clojurescript.test "0.3.0"]
+                             [com.cemerick/clojurescript.test "0.3.1"]
                              [com.cemerick/austin "0.1.4"]
-                             [codox "0.8.7"]]
+                             [codox "0.8.9"]]
                    :hooks [cljx.hooks]
                    :aliases {"cleantest" ["do" "clean," "cljx" "once," "test," "cljsbuild" "test"]
                              "release" ["do" "clean," "cljx" "once," "deploy" "clojars"]}}}
