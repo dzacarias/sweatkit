@@ -29,7 +29,7 @@ The library is motivated by the need to get the same kind of information from th
 Using [Leiningen](http://leiningen.org), add this to your project's `:dependencies`:
 
 ```clojure
-[sweatkit "0.1.0"]
+[sweatkit "0.1.1"]
 ```
 
 ### Some examples
@@ -44,13 +44,13 @@ Let's start by parsing a TCX file into sweatkit's format:
 ; Provide a TCX File/InputStream/String (Clojure) or String (ClojureScript)
 (def p (tcx/parse (io/file "FitnessHistoryDetail.tcx")))
 
-=> p
+=> (clojure.pprint/pprint p)
 {:activities
   [{
     ; -> Starting instant
     :dtstart #<DateTime 2007-08-07T02:42:41.000Z>,
     ; -> Any extra info
-    :annotations {:notes "A title"},
+    :annotations {:notes nil},
     ; -> The activity's segments (usually called "laps")
     :segments
     [{:metrics
@@ -61,28 +61,32 @@ Let's start by parsing a TCX file into sweatkit's format:
        :altitude
        ; -> When there's a track of values for a metric, it appears like this:
        {:track 
-        ({:altitude 3.982666,
+        [{:metric :altitude,
+          :value 3.982666,
           :instant #<DateTime 2007-08-07T02:42:41.000Z>}
           ; ...
-          )},
+          ]},
        :distance
        {:track
-        ({:distance 0.0,
+        [{:metric :distance,
+          :value 0.0,
           :instant #<DateTime 2007-08-07T02:42:41.000Z>}
-         {:distance 6.3073034,
+         {:metric :distance,
+          :value 6.3073034,
           :instant #<DateTime 2007-08-07T02:42:48.000Z>}
-         {:distance 7.5551758,
+         {:metric :distance,
+          :value 7.5551758,
           :instant #<DateTime 2007-08-07T02:42:54.000Z>}
           ; ...
-          })}
+          }]}
       },
-      :annotations {:notes "Some info on the segment"},
+      :annotations {:notes nil},
       ; -> What caused this segment to be created (manually or some metric)
       :trigger :manual,
       ; -> It was an active (not resting) period
       :active true,
-      ; -> How long it was, in milliseconds
-      :duration 2325020,
+      ; -> How long it was, in seconds
+      :duration 2325.02,
       ; -> When it started
       :dtstart #<DateTime 2007-08-07T02:42:41.000Z>,
       ; -> A segment may only refer to a single sport
@@ -94,8 +98,8 @@ A basic concept in sweatkit is the "measured" abstraction (through the IMeasured
 To start using sweatkit, you take a map like the one described above and feed it into the sweatkit.core/db function. It will return a mostly identical new map where each activity will implement the IMeasured protocol:
 
 ```clojure
-; Build the parsed structure and get the first activity 
-(def act (-> (s/db p) :activities first))
+; Get the first activity from the parsed structure
+(def act (-> p :activities first))
 
 ; The activity is a measured object that may be fed into other fns
 (s/measured? act)
