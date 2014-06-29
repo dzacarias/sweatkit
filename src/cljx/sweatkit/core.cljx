@@ -633,13 +633,13 @@
   (letfn [(metric [m v]
             {m 
              (merge v (when-let [t (vec (map measurement (:track v)))]
-                        {:track t}))})]
-    (when (segment? s)
-      (if-not (measured? s)
+                        (when-not (empty? t) {:track t})))})]
+    (if-not (measured? s)
+      (when (segment? s)
         (map->Segment
          (merge s {:metrics (apply merge (for [[m v] (:metrics s)]
-                                           (metric m v)))}))
-        s))))
+                                           (metric m v)))})))
+      s)))
 
 (defn activity?
   "Takes a map and validates if it has the proper structure in order for it
@@ -659,12 +659,11 @@
    If the input is already an IMeasured, it will be returned as-is.
    If the input is not a valid activity map, the function returns nil"
   [a]
-  (when (activity? a)
-    (if-not (measured? a)
+  (if-not (measured? a) 
+    (when (activity? a)
       (map->Activity
-       (merge a {:segments (map #(if (measured? %) % (segment %))
-                                (:segments a))}))
-      a)))
+       (merge a {:segments (vec (map segment (:segments a)))})))
+    a))
 
 (defn db?
   "Takes a data structure and checks if it conforms to sweatkit's db format:
@@ -681,7 +680,7 @@
    also get that behavior"
   [in]
   (when (db? in)
-    {:activities (map activity (:activities in))}))
+    {:activities (vec (map activity (:activities in)))}))
 
 
 ; -----------------------------------------------------------------------------
