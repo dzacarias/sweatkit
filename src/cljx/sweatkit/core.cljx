@@ -578,78 +578,142 @@
   "Takes a measured object and yields the whole Position track, if it exists"
   [md] (track md :position))
 
-(defn valid-sweat?
+(declare MeasurementSchema SegmentSchema ActivitySchema)
+
+(defn measurement?
+  "Takes a map and validates if it has the necessary keys and vals
+   to be considered a measurement point, like so:
+     :instant => Reading instant (DateTime)
+     :<metric> (key corresponding to the metric-type) => <value>
+
+     The metric value may be a number or a map with :lan and :lng keys,
+     each with numeric values"
+  [m] (and (nil? (s/check MeasurementSchema m))
+           (not (empty? (filter metric-types (keys m))))))
+
+(defn measurement
+  "Takes a map, as validated by the measurement-point? fn and yields
+   a new one, implementing the IPointValue protocol. If there is more than
+   one metric entry, one will be chose as random, for this measurement
+
+   If the input is already a point-val, it will be returned as-is.
+   If the input is not a valid measurement map, the function returns nil"
+  [m]
+  (if-not (point-val? m)
+    (when (measurement? m)
+      (let [k (first (filter metric-types (keys m)))]
+        (map->PointValue
+         {:instant (:instant m), :value (k m), :metric k})))
+    m))
+
+(defn segment?
+  "Takes a map and validates if it has the proper structure in order
+   for it to be considered a segment, like so:
+     :dtstart => Starting instant (DateTime)
+     :duration => Number of seconds (Double)
+     :active => Was this an active period? (Boolean)
+     :trigger => What caused this segment? (An element from trigger-types)
+     :annotations => Map with relevant annotations
+     :metrics => Map with keys corresponding to metric-types,
+                       each of its values a map like this:
+        :avg => Average value for this metric
+        :max => Max value for this metric
+        :min => Min value for this metric
+        :total => Total value for this metric
+        :track => Seq of individual readings, as per the measurement? fn"
+  [s] (nil? (s/check SegmentSchema s)))
+
+(defn segment
+  "Takes a map, as validated by the segment? fn  and yields a mostly identical
+   new one, implementing the IMeasured interface
+
+   If the input is already an IMeasured, it will be returned as-is.
+   If the input is not a valid segment map, the function returns nil"
+  [s]
+  (letfn [(metric [m v]
+            {m 
+             (merge v (when-let [t (vec (map measurement (:track v)))]
+                        {:track t}))})]
+    (when (segment? s)
+      (if-not (measured? s)
+        (map->Segment
+         (merge s {:metrics (apply merge (for [[m v] (:metrics s)]
+                                           (metric m v)))}))
+        s))))
+
+(defn activity?
+  "Takes a map and validates if it has the proper structure in order for it
+   to be considered an activity, like so:
+        :activities => Collection of maps like this:
+            :dtstart => DateTime - starting instant
+            :annotations => Map - Relevant annotations
+            :segments => Collection of maps, as per the segment? fn"
+  [a] (nil? (s/check ActivitySchema a)))
+
+
+(defn activity 
+  "Takes a map, as validated by the activity? fn and yields a mostly identical
+   new one, but where each element in :segments is made an IMeasured (as per
+   the segment fn)
+
+   If the input is already an IMeasured, it will be returned as-is.
+   If the input is not a valid activity map, the function returns nil"
+  [a]
+  (when (activity? a)
+    (if-not (measured? a)
+      (map->Activity
+       (merge a {:segments (map #(if (measured? %) % (segment %))
+                                (:segments a))}))
+      a)))
+
+(defn db?
   "Takes a data structure and checks if it conforms to sweatkit's db format:
    A map with these keys and values:
-    :activities => Collection of maps like this:
-        :dtstart => DateTime - starting instant
-        :annotations => Map - Relevant annotations
-        :segments => Collection of maps like this:
-           :dtstart => Starting instant (DateTime)
-           :duration => Number of seconds (Double)
-           :active => Was this an active period? (Boolean)
-           :trigger => What caused this segment? (An element from trigger-types)
-           :annotations => Map with relevant annotations
-           :metrics => Map with keys corresponding to metric-types,
-                       each of its values a map like this:
-             :avg => Average value for this metric
-             :max => Max value for this metric
-             :min => Min value for this metric
-             :total => Total value for this metric
-             :track => Seq of individual readings, each like this:
-                 :instant => Reading instant (DateTime)
-                 :<metric> (key corresponding to the metric-type) => <value>"
+    :activities => Collection of maps, as per the activity? fn"
   [in]
-  (let [datetime #+clj org.joda.time.DateTime #+cljs goog.date.UtcDateTime
-        segment {:dtstart datetime
-                 :duration s/Num
-                 :sport (apply s/enum (seq sport-types))
-                 :active s/Bool
-                 :trigger (apply s/enum (seq trigger-types))
-                 :metrics {(s/optional-key :avg) [s/Num]
-                           (s/optional-key :max) [s/Num]
-                           (s/optional-key :min) [s/Num]
-                           (s/optional-key :total) [s/Num]
-                           (s/optional-key :track)
-                           [{:instant datetime
-                             ; Metric 
-                             (s/enum metric-types)
-                             (s/either
-                              s/Num
-                              {(s/required-key :lat) s/Num
-                               (s/required-key :lng) s/Num})}]
-                           s/Keyword s/Any}
-                 (s/optional-key :annotations) {s/Keyword s/Any}
-                 s/Keyword s/Any}
-        activity {:dtstart datetime
-                  (s/optional-key :annotations) {s/Keyword s/Any}
-                  :segments [segment]
-                  s/Keyword s/Any}
-        db {(s/optional-key :activities) [activity]}]
+  (let [db {(s/optional-key :activities) [ActivitySchema]}]
     (nil? (s/check db in))))
 
 (defn db
-  "Takes a data structure as checked by valid-sweat? and yields a mostly
-   identical new one, with the following features:
-   * The :activities vector implements the IMeasured protocol, as well as 
-     its elements
-   * The :segments coll is also an IMeasured, as well as each of its elementsb
-   * All metric tracks are also made IMeasured and their items are IPointValues"
+  "Takes a data structure as checked by db? and yields a mostly identical
+   new one, but where each element in the :activities vector is made to be
+   an IMeasured. Since IMeasured colls are also IMeasured themselves, you
+   also get that behavior"
   [in]
-  (letfn [(point-val [pv m]
-            (map->PointValue
-             {:instant (:instant pv), :value (m pv), :metric m}))
-          (metric [m v]
-            {m 
-             (merge v (when-let [t (map #(point-val % m) (:track v))]
-                        {:track t}))})
-          (segment [s]
-            (map->Segment
-             (merge s {:metrics (apply merge (for [[m v] (:metrics s)]
-                                               (metric m v)))})))
-          (activity [a]
-            (map->Activity
-             (merge a {:segments (map segment (:segments a))})))]
+  (when (db? in)
+    {:activities (map activity (:activities in))}))
 
-    (when (valid-sweat? in)
-      {:activities (map activity (:activities in))})))
+
+; -----------------------------------------------------------------------------
+; Schemas
+
+(def ^:private DateTimeSchema
+  #+clj org.joda.time.DateTime
+  #+cljs goog.date.UtcDateTime)
+
+(def ^:private MeasurementSchema {:instant DateTimeSchema
+                                  (apply s/enum metric-types)
+                                  (s/either
+                                   s/Num
+                                   {(s/required-key :lat) s/Num
+                                    (s/required-key :lng) s/Num})})
+
+(def ^:private SegmentSchema {:dtstart DateTimeSchema
+                              :duration s/Num
+                              :sport (apply s/enum sport-types)
+                              :active s/Bool
+                              :trigger (apply s/enum trigger-types)
+                              :metrics {(s/optional-key :avg) [s/Num]
+                                        (s/optional-key :max) [s/Num]
+                                        (s/optional-key :min) [s/Num]
+                                        (s/optional-key :total) [s/Num]
+                                        (s/optional-key :track)
+                                        [MeasurementSchema]
+                                        s/Keyword s/Any}
+                              (s/optional-key :annotations) {s/Keyword s/Any}
+                              s/Keyword s/Any})
+
+(def ^:private ActivitySchema {:dtstart DateTimeSchema
+                               (s/optional-key :annotations) {s/Keyword s/Any}
+                               :segments [SegmentSchema]
+                               s/Keyword s/Any})

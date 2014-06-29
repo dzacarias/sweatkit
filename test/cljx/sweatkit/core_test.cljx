@@ -103,10 +103,10 @@
 
 (deftest format-test
   (testing "Valid format should be true"
-    (is (sk/valid-sweat? sweat-db)))
+    (is (sk/db? sweat-db)))
   (testing "Invalid format should be false"
     (let [db-1 (assoc-in sweat-db [:activities 0 :segments 0 :sport] nil)]
-      (is (not (sk/valid-sweat? db-1))))))
+      (is (not (sk/db? db-1))))))
 
 (deftest splits-test
   (testing "Should not split if there's no metric track"
@@ -120,7 +120,7 @@
                        :speed
                        1000)))))
   (let [a (-> (util/read-file "test-resources/tcx/FitnessHistoryDetail.tcx")
-              tcx/parse sk/db :activities first)]
+              tcx/parse :activities first)]
     (testing "Total splits should be correct for given metric split value"
       (is (= 9 (count (sk/splits a :distance 1000))))
       (is (= 84 (count (sk/splits a :distance 100)))))

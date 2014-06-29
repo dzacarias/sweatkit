@@ -80,7 +80,7 @@
                      {:max m})) 
             nil)
 
-          (when-let [tk (get-track tks metric)]
+          (when-let [tk (vec (map sk/measurement (get-track tks metric)))]
             (when-not (empty? tk) {:track tk})))]
 
     {metric m}))
@@ -94,11 +94,13 @@
 
 (defmethod parse-loc :Activity [act]
   "Parses Activity elements, returning a map for a sweatkit Activity"
-  {:dtstart (xml1->inst act :Id)
-   :annotations {:notes (xml1->text act :Notes)}
-   :segments (for [lap (xml-> act :Lap)]
-               (merge {:sport (get sports (attr act :Sport))}
-                      (parse-loc lap)))})
+  (sk/activity
+   {:dtstart (xml1->inst act :Id)
+    :annotations {:notes (xml1->text act :Notes)}
+    :segments (vec (for [lap (xml-> act :Lap)]
+                     (sk/segment
+                      (merge {:sport (get sports (attr act :Sport))}
+                             (parse-loc lap)))))}))
 
 (defmethod parse-loc :Lap [lap]
   "Parses Lap elements, returning a map representing a sweatkit Segment"
@@ -150,5 +152,5 @@
      - ClojureScript: String
    Returns a map in sweatkit format representing the parsed input"
   (let [z (tcx-zip tcx)]
-    {:activities (for [act (xml-> z :Activities :Activity)] 
-                   (parse-loc act))}))
+    {:activities (vec (for [act (xml-> z :Activities :Activity)] 
+                        (parse-loc act)))}))
