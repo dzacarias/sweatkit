@@ -90,12 +90,35 @@
 (def sweat-db
   {:activities [activity]})
 
-(deftest db-test
+(deftest ctor-test
   (testing "Valid format should be built"
-    (is (sk/db sweat-db)))
-  (testing "Invalid format should return empty db"
-    (let [db-1 (assoc-in sweat-db [:activities 0 :segments 1 :metrics] nil)]
-      (is (not (sk/db db-1)))))
+    (let [d (sk/db sweat-db)
+          a (sk/activity activity)
+          s (sk/segment segment-1)
+          mv {:instant (tc/from-string "2014-01-01T01:00:00Z")
+              :speed 10}
+          m (sk/measurement mv)]
+      (is (sk/db? sweat-db))
+      (is d)
+      (is (sk/activity? activity))
+      (is a)
+      (is (sk/segment? segment-1))
+      (is s)
+      (is (sk/measurement? mv))
+      (is m)))
+  (testing "Invalid format should return nil object"
+    (let [db-1 (assoc-in sweat-db [:activities 0 :segments 1 :metrics] nil)
+          a-1 (assoc-in activity [:dtstart] nil)
+          s-1 (assoc-in segment-1 [:dtstart] nil)
+          m-1 {:instant nil :speed 1}]
+      (is (not (sk/db? db-1)))
+      (is (not (sk/db db-1)))
+      (is (not (sk/activity? a-1)))
+      (is (not (sk/activity a-1)))
+      (is (not (sk/segment? s-1)))
+      (is (not (sk/segment s-1)))
+      (is (not (sk/measurement? m-1)))
+      (is (not (sk/measurement m-1)))))
   (testing "Should return an mseq of Activities and each should be measured"
     (let [b (sk/db sweat-db)]
       (is (sk/measured? (:activities b)))
