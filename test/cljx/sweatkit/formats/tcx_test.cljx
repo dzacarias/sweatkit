@@ -3,7 +3,8 @@
             #+cljs [cemerick.cljs.test :as t]
             #+clj  [clj-time.coerce :as tc]
             #+cljs [cljs-time.coerce :as tc]
-            [sweatkit.formats.tcx :refer (parse)]
+            #+cljs [goog.dom.xml :as xml]
+            [sweatkit.formats.tcx :as tcx :refer (parse)]
             [sweatkit.test-util :as util])
   #+cljs
   (:require-macros [cemerick.cljs.test
@@ -68,3 +69,13 @@
       
       (is (= 0 (count (:activities p1))))
       (is (= 0 (count (:activities p2)))))))
+
+#+cljs
+(deftest document-parsing-test
+  (testing "Should work when given a Document instead of a String"
+    (let [s (-> (util/read-file "test-resources/tcx/FitnessHistoryDetail.tcx")
+                xml/loadXml)
+          res (parse s)]
+      (is (= 1 (count (:activities res))))
+      (is (= 8348.5039063 (get-in (-> res :activities first :segments first)
+                                  [:metrics :distance :total]))))))

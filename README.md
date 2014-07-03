@@ -29,7 +29,7 @@ The library is motivated by the need to get the same kind of information from th
 Using [Leiningen](http://leiningen.org), add this to your project's `:dependencies`:
 
 ```clojure
-[sweatkit "0.1.1"]
+[sweatkit "0.1.2"]
 ```
 
 ### Some examples

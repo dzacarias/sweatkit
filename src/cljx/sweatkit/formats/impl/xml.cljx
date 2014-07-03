@@ -10,8 +10,18 @@
 ;; ==============================================================================
 ;; XML Helpers
 
+#+clj
+(defn parse
+  "Proxy for clojure.xml/parse"
+  ([s] (xml/parse s))
+  ([s p] (xml/parse s p)))
+
 #+cljs
 (defrecord XMLElement [tag attrs content])
+
+#+cljs
+(defprotocol IXMLReader
+  (read-xml [this s]))
 
 #+cljs
 (defn- xml-node
@@ -25,44 +35,42 @@
                                        (range (.-length (.-attributes node)))))
                      inner)))) 
 
-#+clj
-(defn parse
-  "Proxy for clojure.xml/parse"
-  [s] (xml/parse s))
-
 #+cljs
 (defn parse
   "Takes a String, representing an XML document and returns a
    clojure.xml-compatible data structure"
-  [s]
-  (let [doc (xml/loadXml s)
-        root (.-documentElement doc)]
-    (loop [parent root
-           node (.-firstElementChild parent)
-           nested [[]]]
-      (if (nil? node)
-        (if (= parent root)
-           ; at the end, return root node with nested vals
-          (xml-node root (last nested))
-           ; no more siblings, go up and to the right
-          (let [others (pop nested)
-                elders (pop others)
-                siblings (last others)
-                children (last nested)]
-            (recur (.-parentNode parent)
-                   (.-nextElementSibling parent)
-                   (conj elders (conj siblings (xml-node parent children))))))
-        (if (pos? (.-childElementCount node))
-           ; has children, go down
-          (recur node
-                 (.-firstElementChild node)
-                 (conj nested []))
-           ; no children, go right to next sibling
-          (recur parent 
-                 (.-nextElementSibling node) 
-                 (conj (pop nested)
-                       (conj (last nested)
-                             (xml-node node)))))))))
+  ([s] (parse s (reify IXMLReader
+                  (read-xml [_ s] (xml/loadXml s)))))
+  ([s p]
+     (let [doc (read-xml p s)
+           root (.-documentElement doc)]
+       
+       (loop [parent root
+              node (.-firstElementChild parent)
+              nested [[]]]
+         (if (nil? node)
+           (if (= parent root)
+                                        ; at the end, return root node with nested vals
+             (xml-node root (last nested))
+                                        ; no more siblings, go up and to the right
+             (let [others (pop nested)
+                   elders (pop others)
+                   siblings (last others)
+                   children (last nested)]
+               (recur (.-parentNode parent)
+                      (.-nextElementSibling parent)
+                      (conj elders (conj siblings (xml-node parent children))))))
+           (if (pos? (.-childElementCount node))
+                                        ; has children, go down
+             (recur node
+                    (.-firstElementChild node)
+                    (conj nested []))
+                                        ; no children, go right to next sibling
+             (recur parent 
+                    (.-nextElementSibling node) 
+                    (conj (pop nested)
+                          (conj (last nested)
+                                (xml-node node))))))))))
 
 (defn parse-double [txt]
   #+clj

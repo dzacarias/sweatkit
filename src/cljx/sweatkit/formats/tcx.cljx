@@ -146,11 +146,52 @@
 ;; =============================================================================
 ;; Public API
 
-(defn parse [tcx]
+(defprotocol ITCXReader
+  (read-tcx [this]
+    "Takes an input source and returns a c.zip/xml-zip structure"))
+
+#+cljs
+(extend-protocol ITCXReader
+
+  string
+  (read-tcx [this] (tcx-zip this))
+
+  js/Document
+  (read-tcx [this]
+    (-> this
+        (xml/parse
+         (reify xml/IXMLReader
+           (read-xml [_ d] d)))
+        zip/xml-zip)))
+
+#+clj
+(extend-protocol ITCXReader
+
+  java.io.OutputStream
+  (read-tcx [this] (tcx-zip this))
+  
+  java.io.File
+  (read-tcx [this] (tcx-zip this))
+  
+  java.net.URI
+  (read-tcx [this] (tcx-zip this))
+  
+  java.net.URL
+  (read-tcx [this] (tcx-zip this))
+
+  java.net.Socket
+  (read-tcx [this] (tcx-zip this))
+
+  String
+  (read-tcx [this] (tcx-zip this)))
+
+(defn parse 
   "Takes a param representing a TCX input, in any of the following types:
-     - Clojure: File, URI, URL, Socket, byte array, or String.
-     - ClojureScript: String
+     - Clojure: OutputStream, File, URI, URL, Socket or String.
+     - ClojureScript: String or Document
+  
    Returns a map in sweatkit format representing the parsed input"
-  (let [z (tcx-zip tcx)]
+  [tcx]
+  (let [z (read-tcx tcx)]
     {:activities (vec (for [act (xml-> z :Activities :Activity)] 
                         (parse-loc act)))}))

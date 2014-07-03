@@ -1,3 +1,6 @@
+## 0.1.2
+ * TCX parsing now accepts Document objects, instead of just strings
+
 ## 0.1.1
  * Renamed the valid-sweat? fn to db?
  * Added activity?, segment? and measurement? predicates, to validate data structures for each concept
