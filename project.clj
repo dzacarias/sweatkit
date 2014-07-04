@@ -1,4 +1,4 @@
-(defproject sweatkit "0.1.2"
+(defproject sweatkit "0.1.3-SNAPSHOT"
   :description "A Clojure(Script) library to work with sports activities data"
   :url "https://github.com/dzacarias/sweatkit"
   :license {:name "Eclipse Public License"
