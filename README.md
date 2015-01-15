@@ -164,7 +164,7 @@ Sequential collections containing IMeasured or IPointValue objects are extended 
 ```
 ## Roadmap
 
-sweatkit's development will be driven mostly by needs that arise while working on a related project (TBA soon). To give you an idea of where we're headed, here's a list of features that we'd like to add over time:
+To give you an idea of where we're headed, here's a list of features that we'd like to add over time:
 
 - TCX format emitting
 - FIT format parsing/emitting
