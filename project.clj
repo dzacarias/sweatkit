@@ -8,8 +8,9 @@
 
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/data.zip "0.1.1"]
-                 [clj-time "0.7.0"]
-                 [prismatic/schema "0.2.4"]]
+                 [org.clojure/data.xml "0.0.8"]
+                 [clj-time "0.9.0"]
+                 [prismatic/schema "0.3.3"]]
   
   :jar-exclusions [#"\.DS_Store"]
 

@@ -3,7 +3,7 @@
    MultiSportSessions coming on future release). Workouts and Courses will only
    be supported if/when sweatkit.core is extended to those concepts"
   (:require [clojure.zip :as zip]
-            [clojure.xml :as xml]
+            [clojure.data.xml :as xml]
             [clojure.data.zip.xml :as dzip]
             [sweatkit.core :as sk]
             [clojure.java.io :as io]
@@ -15,20 +15,14 @@
 ; ---------------------------------------------------------------------------
 ; XML helpers
 
-(defn- parse-double [txt]
-  (Double/parseDouble txt))
-
-(defn- parse-int [txt]
-  (Integer/parseInt txt))
-
 (defn- xml1->text [loc & preds] 
   (some-> (apply dzip/xml1-> loc preds) zip/node :content first))
 
 (defn- xml1->double [loc & preds]
-  (some-> (apply xml1->text loc preds) parse-double))
+  (some-> (apply xml1->text loc preds) Double/parseDouble))
 
 (defn- xml1->int [loc & preds]
-  (some-> (apply xml1->text loc preds) parse-int))
+  (some-> (apply xml1->text loc preds) Integer/parseInt))
 
 (defn- xml1->inst [loc & preds]
   (some-> (apply xml1->text loc preds) time/parse))
@@ -51,10 +45,6 @@
 (def ^:private intensities
   {"Active" :active
    "Resting" :resting})
-
-(defn- tcx-zip [tcx]
-  (with-open [i (io/input-stream tcx)]
-    (-> i xml/parse zip/xml-zip)))
 
 (defn- get-track [tks metric]
   (filter metric tks))
@@ -94,9 +84,9 @@
                                                :Extensions :LX :MaxRunCadence))]
                      {:max m}))
             :power
-            (merge (when-let [a (xml1->int loc :Extensions :p1:AverageWatts)]
+            (merge (when-let [a (xml1->int loc :Extensions :AverageWatts)]
                      {:avg a})
-                   (when-let [m (xml1->int loc :Extensions :p1:MaxWatts)]
+                   (when-let [m (xml1->int loc :Extensions :MaxWatts)]
                      {:max m})) 
             nil)
 
@@ -155,7 +145,7 @@
                                        :RunCadence))]
            {:cadence cad})
          (when-let [pow (or (xml1->double tpnt :Extensions :TPX :Watts)
-                            (xml1->double tpnt :Extensions :p1:Watts))]
+                            (xml1->double tpnt :Extensions :Watts))]
            {:power pow})
          (when-let [spd (or (xml1->double tpnt :Extensions :TPX :Speed)
                             (xml1->double tpnt :Extensions
@@ -168,43 +158,16 @@
 ;; =============================================================================
 ;; Public API
 
-(defprotocol ITCXReader
-  (read-tcx [this]
-    "Takes an input source and returns a c.zip/xml-zip structure"))
-
-(defprotocol ITCXWriter
-  (write-tcx [this]
-    "Takes a sweatkit db and outputs the corresponding TCX data"))
-
-(extend-protocol ITCXReader
-
-  java.io.OutputStream
-  (read-tcx [this] (tcx-zip this))
-  
-  java.io.File
-  (read-tcx [this] (tcx-zip this))
-  
-  java.net.URI
-  (read-tcx [this] (tcx-zip this))
-  
-  java.net.URL
-  (read-tcx [this] (tcx-zip this))
-
-  java.net.Socket
-  (read-tcx [this] (tcx-zip this))
-
-  String
-  (read-tcx [this] (tcx-zip this)))
-
 (defn parse 
   "Takes a param representing a TCX input, in any of the following types:
    OutputStream, File, URI, URL, Socket or String.
-     
+  
    Returns a map in sweatkit format representing the parsed input"
   [tcx]
-  (let [z (read-tcx tcx)]
-    {:activities (vec (for [act (dzip/xml-> z :Activities :Activity)] 
-                        (parse-loc act)))}))
+  (with-open [i (io/input-stream tcx)]
+    (let [z (-> i xml/parse zip/xml-zip)]
+      {:activities (vec (for [act (dzip/xml-> z :Activities :Activity)] 
+                          (parse-loc act)))})))
 
 ;; (defn emit
 ;;   "Takes a sweatkit db and returns the TCX data as a String or nil if the input
