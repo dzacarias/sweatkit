@@ -1,6 +1,6 @@
 # sweatkit [![Build Status](https://travis-ci.org/dzacarias/sweatkit.svg?branch=master)](https://travis-ci.org/dzacarias/sweatkit)
 
-sweatkit is a Clojure(Script) library to work with sports activities data.
+sweatkit is a Clojure library to work with sports activities data.
 
 **This is alpha software. The API and code structure are subject to change.**
 
@@ -41,7 +41,7 @@ Let's start by parsing a TCX file into sweatkit's format:
 (require '[sweatkit.core :as s])
 (require '[clojure.java.io :as io])
 
-; Provide a TCX File/InputStream/String (Clojure) or String (ClojureScript)
+; Provide a TCX File/InputStream/String 
 (def p (tcx/parse (io/file "FitnessHistoryDetail.tcx")))
 
 => (clojure.pprint/pprint p)

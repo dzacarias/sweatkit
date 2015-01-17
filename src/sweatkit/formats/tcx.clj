@@ -3,15 +3,38 @@
    MultiSportSessions coming on future release). Workouts and Courses will only
    be supported if/when sweatkit.core is extended to those concepts"
   (:require [clojure.zip :as zip]
-            [sweatkit.formats.impl.xml :as xml
-             :refer (xml1->double xml1->int xml1->inst xml1->text attr xml->)]
+            [clojure.xml :as xml]
+            [clojure.data.zip.xml :as dzip]
             [sweatkit.core :as sk]
-            #+clj  [clojure.java.io :as io]
-            #+clj  [clj-time.format :as time]
-            #+cljs [cljs-time.format :as time]))
+            [clojure.java.io :as io]
+            [clj-time.format :as time]))
 
 ;; ==============================================================================
 ;; Private API
+
+; ---------------------------------------------------------------------------
+; XML helpers
+
+(defn- parse-double [txt]
+  (Double/parseDouble txt))
+
+(defn- parse-int [txt]
+  (Integer/parseInt txt))
+
+(defn- xml1->text [loc & preds] 
+  (some-> (apply dzip/xml1-> loc preds) zip/node :content first))
+
+(defn- xml1->double [loc & preds]
+  (some-> (apply xml1->text loc preds) parse-double))
+
+(defn- xml1->int [loc & preds]
+  (some-> (apply xml1->text loc preds) parse-int))
+
+(defn- xml1->inst [loc & preds]
+  (some-> (apply xml1->text loc preds) time/parse))
+
+; ---------------------------------------------------------------------------
+; TCX / sweakit
 
 (def ^:private sports
   {"Running" :running
@@ -30,11 +53,8 @@
    "Resting" :resting})
 
 (defn- tcx-zip [tcx]
-  #+clj
   (with-open [i (io/input-stream tcx)]
-    (-> i xml/parse zip/xml-zip))
-  #+cljs
-  (-> tcx xml/parse zip/xml-zip))
+    (-> i xml/parse zip/xml-zip)))
 
 (defn- get-track [tks metric]
   (filter metric tks))
@@ -97,17 +117,17 @@
   (sk/activity
    {:dtstart (xml1->inst act :Id)
     :annotations {:notes (xml1->text act :Notes)}
-    :segments (vec (for [lap (xml-> act :Lap)]
+    :segments (vec (for [lap (dzip/xml-> act :Lap)]
                      (sk/segment
-                      (merge {:sport (get sports (attr act :Sport))}
+                      (merge {:sport (get sports (dzip/attr act :Sport))}
                              (parse-loc lap)))))}))
 
 (defmethod parse-loc :Lap [lap]
   "Parses Lap elements, returning a map representing a sweatkit Segment"
-  (let [tks (for [tpnt (xml-> lap :Track :Trackpoint) :let [tp (parse-loc tpnt)]
+  (let [tks (for [tpnt (dzip/xml-> lap :Track :Trackpoint) :let [tp (parse-loc tpnt)]
                   [k v] tp :when (not (nil? v))]
               (select-keys tp [:instant k]))]
-    {:dtstart     (time/parse (attr lap :StartTime))
+    {:dtstart     (time/parse (dzip/attr lap :StartTime))
      :duration    (xml1->double lap :TotalTimeSeconds)
      :active      (= :active (get intensities (xml1->text lap :Intensity))) 
      :trigger     (get lap-triggers (xml1->text lap :TriggerMethod)) 
@@ -143,6 +163,8 @@
                                           :Speed))]
            {:speed spd})))
 
+(defmulti ^:private emit-loc )
+
 ;; =============================================================================
 ;; Public API
 
@@ -150,21 +172,10 @@
   (read-tcx [this]
     "Takes an input source and returns a c.zip/xml-zip structure"))
 
-#+cljs
-(extend-protocol ITCXReader
+(defprotocol ITCXWriter
+  (write-tcx [this]
+    "Takes a sweatkit db and outputs the corresponding TCX data"))
 
-  string
-  (read-tcx [this] (tcx-zip this))
-
-  js/Document
-  (read-tcx [this]
-    (-> this
-        (xml/parse
-         (reify xml/IXMLReader
-           (read-xml [_ d] d)))
-        zip/xml-zip)))
-
-#+clj
 (extend-protocol ITCXReader
 
   java.io.OutputStream
@@ -187,11 +198,19 @@
 
 (defn parse 
   "Takes a param representing a TCX input, in any of the following types:
-     - Clojure: OutputStream, File, URI, URL, Socket or String.
-     - ClojureScript: String or Document
-  
+   OutputStream, File, URI, URL, Socket or String.
+     
    Returns a map in sweatkit format representing the parsed input"
   [tcx]
   (let [z (read-tcx tcx)]
-    {:activities (vec (for [act (xml-> z :Activities :Activity)] 
+    {:activities (vec (for [act (dzip/xml-> z :Activities :Activity)] 
                         (parse-loc act)))}))
+
+;; (defn emit
+;;   "Takes a sweatkit db and returns the TCX data as a String or nil if the input
+;;    is not in a valid format"
+;;   [db]
+;;   (when (sk/db? db)
+;;     (for [a (:activities db)]
+      
+;;       )))

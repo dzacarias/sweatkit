@@ -2,15 +2,9 @@
   (:require [sweatkit.core :as sk]
             [sweatkit.formats.tcx :as tcx]
             [sweatkit.test-util :as util]
-            #+clj  [clojure.test :as t :refer :all]  
-            #+cljs [cemerick.cljs.test :as t]
-            #+clj  [clj-time.coerce :as tc]
-            #+cljs [cljs-time.coerce :as tc]
-            #+clj  [clj-time.core :as time]
-            #+cljs [cljs-time.core :as time])
-  #+cljs
-  (:require-macros [cemerick.cljs.test
-                    :refer (is deftest with-test run-tests testing test-var)]))
+            [clojure.test :as t :refer :all]  
+            [clj-time.coerce :as tc]
+            [clj-time.core :as time]))
 
 ;; -----------------------------------------------------------------------------
 ;; Unit tests
@@ -26,11 +20,6 @@
   (map #(hash-map :instant (rand-inst % dtstart duration)
                   m (Math/abs (* 10 (Math/sin %))))
        (range 0 360 0.25)))
-
-(defn- =f
-  "Approximate comparison for floating point numbers, because of JS"
-  [& vals]
-  (empty? (remove #(< % 0.000001) (map #(Math/abs (- (first vals) %)) vals))))
 
 (def segment-1
   (let [dtstart (tc/from-string "2013-08-07T03:10:21Z")
@@ -227,8 +216,8 @@
       (testing "Max, Min and Avg values should be the same as the reference activity"
         (is (= (sk/mreduce acts :speed :max)
                (sk/mreduce ref-act :speed :max)))
-        (is (=f (sk/mreduce acts :speed :avg)
-                (sk/mreduce ref-act :speed :avg))))))
+        (is (= (sk/mreduce acts :speed :avg)
+               (sk/mreduce ref-act :speed :avg))))))
   (testing "Different measured elem sequence"
     (let [a-1 (assoc-in activity [:segments] [segment-1])
           a-2 (assoc-in activity [:segments] [segment-2 segment-3])
@@ -257,9 +246,9 @@
                                    
                                    :dur (-> % sk/interval sk/duration))
                         acts)]
-          (is (=f (sk/mreduce acts :speed :avg)
-                  (float (/ (apply + (map :val vals))
-                            (apply + (map :dur vals)))))))))))
+          (is (= (sk/mreduce acts :speed :avg)
+                 (float (/ (apply + (map :val vals))
+                           (apply + (map :dur vals)))))))))))
 
 (deftest predicates-test
   (testing "Should be true for a measured"

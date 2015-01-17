@@ -4,10 +4,8 @@
    Altitude, Distance) out of collections of activities, individual activities
    or small time segments within them."
   (:require  [clojure.set :as st]
-      #+clj  [clj-time.core :as time]
-      #+cljs [cljs-time.core :as time]
-      #+clj  [clj-time.coerce :as tc]
-      #+cljs [cljs-time.coerce :as tc]
+             [clj-time.core :as time]
+             [clj-time.coerce :as tc]
              [schema.core :as s]))
 
 ;; -----------------------------------------------------------------------------
@@ -82,34 +80,32 @@
   (value [this] value)
   (metric [this] metric))
 
-#+clj (alter-meta! #'->Activity assoc :no-doc true)
-#+clj (alter-meta! #'map->Activity assoc :no-doc true)
-#+clj (alter-meta! #'->Segment assoc :no-doc true)
-#+clj (alter-meta! #'map->Segment assoc :no-doc true)
-#+clj (alter-meta! #'->PointValue assoc :no-doc true)
-#+clj (alter-meta! #'map->PointValue assoc :no-doc true)
+(alter-meta! #'->Activity assoc :no-doc true)
+(alter-meta! #'map->Activity assoc :no-doc true)
+(alter-meta! #'->Segment assoc :no-doc true)
+(alter-meta! #'map->Segment assoc :no-doc true)
+(alter-meta! #'->PointValue assoc :no-doc true)
+(alter-meta! #'map->PointValue assoc :no-doc true)
 
 (declare seq-metrics seq-track seq-tracked? seq-interval seq-mreduce)
 
 (extend-protocol IMeasured
-  #+clj  clojure.lang.LazySeq
-  #+cljs  cljs.core.LazySeq
+
+  clojure.lang.LazySeq
   (metrics [this] (seq-metrics this))
   (track [this m] (seq-track this m))
   (tracked? [this m] (seq-tracked? this m))
   (interval [this] (seq-interval this))
   (mreduce [this m rfn] (seq-mreduce this m rfn))
 
-  #+clj  clojure.lang.APersistentVector
-  #+cljs cljs.core.PersistentVector
+  clojure.lang.APersistentVector
   (metrics [this] (seq-metrics this))
   (track [this m] (seq-track this m))
   (tracked? [this m] (seq-tracked? this m))
   (interval [this] (seq-interval this))
   (mreduce [this m rfn] (seq-mreduce this m rfn))
 
-  #+clj  clojure.lang.PersistentList
-  #+cljs cljs.core.List
+  clojure.lang.PersistentList
   (metrics [this] (seq-metrics this))
   (track [this m] (seq-track this m))
   (tracked? [this m] (seq-tracked? this m))
@@ -686,9 +682,7 @@
 ; -----------------------------------------------------------------------------
 ; Schemas
 
-(def ^:private DateTimeSchema
-  #+clj org.joda.time.DateTime
-  #+cljs goog.date.UtcDateTime)
+(def ^:private DateTimeSchema org.joda.time.DateTime)
 
 (def ^:private MeasurementSchema {:instant DateTimeSchema
                                   (apply s/enum metric-types)

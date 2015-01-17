@@ -1,3 +1,6 @@
+## 0.1.3
+ * Moved to Clojure-only, due to lack of time to develop for both targets
+ 
 ## 0.1.2
  * TCX parsing now accepts Document objects, instead of just strings
 
