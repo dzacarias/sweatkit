@@ -238,6 +238,8 @@
      (every? measured? coll) :measured
      (every? point-val? coll) :point-val)))
 
+(def ^:private int-val-metrics #{:cadence :power :hr :calories})
+
 (defmulti ^:private reduce-pvseq
   "IPointValue seqs can be reduced to extract useful global values.
    The reduce-pvseq multimethod provides a way to apply some default
@@ -260,7 +262,11 @@
         roll-vals (sma-lin (filter #(= m (metric %)) pvseq)
                            window-size)]
     (when-not (empty? roll-vals)
-      (/ (reduce + roll-vals) (count roll-vals)))))
+      (let [val
+            (float (/ (reduce + roll-vals) (count roll-vals)))]
+        (if (contains? int-val-metrics m)
+          (Math/round val)
+          val)))))
 
 (defmethod reduce-pvseq :min [m _ pvseq]
   "Returns the minimum value in the pvseq"
@@ -307,8 +313,12 @@
                                mseq))
         denominators (map :itv vals)]
     (when-not (empty? denominators)
-      (float (/ (apply + (map :val vals))
-                (apply + denominators))))))
+      (let [val 
+            (float (/ (apply + (map :val vals))
+                      (apply + denominators)))]
+        (if (contains? int-val-metrics m)
+          (Math/round val)
+          val)))))
 
 (defmethod reduce-mseq :max [m rfn mseq]
   "Returns the max value for the given metric in mseq's elements"
