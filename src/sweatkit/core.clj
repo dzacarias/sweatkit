@@ -673,7 +673,7 @@
   "Takes a data structure as checked by db? and yields a mostly identical
    new one, but where each element in the :activities vector is made to be
    an IMeasured. Since IMeasured colls are also IMeasured themselves, you
-   also get that behavior"
+   also get that behavior over the entire sequence"
   [in]
   (when (db? in)
     {:activities (vec (map activity (:activities in)))}))

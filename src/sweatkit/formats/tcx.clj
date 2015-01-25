@@ -1,7 +1,8 @@
 (ns sweatkit.formats.tcx
-  "TCX to sweatkit format parser. There's only support for Activity nodes (with
-   MultiSportSessions coming on future release). Workouts and Courses will only
-   be supported if/when sweatkit.core is extended to those concepts"
+  "TCX to sweatkit format parser and TCX emitter. Currently, the supported TCX nodes
+   are: Activity and MultiSportSessions
+   Workouts and Courses will only be supported if/when sweatkit.core is
+   extended to those concepts"
   (:require [clojure.zip :as zip]
             [clojure.data.xml :as xml]
             [clojure.data.zip.xml :as dzip]
@@ -9,10 +10,10 @@
             [clojure.java.io :as io]
             [clj-time.format :as time]))
 
-;; ==============================================================================
+;; =============================================================================
 ;; Private API
 
-; ---------------------------------------------------------------------------
+; ------------------------------------------------------------------------------
 ; XML helpers
 
 (defn- xml1->text [loc & preds] 
@@ -27,8 +28,8 @@
 (defn- xml1->inst [loc & preds]
   (some-> (apply xml1->text loc preds) time/parse))
 
-; ---------------------------------------------------------------------------
-; TCX / sweakit
+; ------------------------------------------------------------------------------
+; TCX / sweatkit
 
 (def ^:private sports
   {"Running" :running
@@ -45,6 +46,9 @@
 (def ^:private intensities
   {"Active" :active
    "Resting" :resting})
+
+; ------------------------------------------------------------------------------
+; Parse TCX
 
 (defn- get-track [tks metric]
   (filter metric tks))
@@ -84,9 +88,11 @@
                                                :Extensions :LX :MaxRunCadence))]
                      {:max m}))
             :power
-            (merge (when-let [a (xml1->int loc :Extensions :AverageWatts)]
+            (merge (when-let [a (or (xml1->int loc :Extensions :AverageWatts)
+                                    (xml1->int loc :Extensions :LX :AvgWatts))]
                      {:avg a})
-                   (when-let [m (xml1->int loc :Extensions :MaxWatts)]
+                   (when-let [m (or (xml1->int loc :Extensions :MaxWatts)
+                                    (xml1->int loc :Extensions :LX :MaxWatts))]
                      {:max m})) 
             nil)
 
@@ -114,7 +120,8 @@
 
 (defmethod parse-loc :Lap [lap]
   "Parses Lap elements, returning a map representing a sweatkit Segment"
-  (let [tks (for [tpnt (dzip/xml-> lap :Track :Trackpoint) :let [tp (parse-loc tpnt)]
+  (let [tks (for [tpnt (dzip/xml-> lap :Track :Trackpoint)
+                  :let [tp (parse-loc tpnt)]
                   [k v] tp :when (not (nil? v))]
               (select-keys tp [:instant k]))]
     {:dtstart     (time/parse (dzip/attr lap :StartTime))
@@ -153,7 +160,111 @@
                                           :Speed))]
            {:speed spd})))
 
-(defmulti ^:private emit-loc )
+; ------------------------------------------------------------------------------
+; Emit TCX
+
+(defn- key-name
+  "Converts a sweatkit sport name keyword into TCX's string"
+  [k container]
+  (first (keep #(when (= k (val %)) (key %)) container)))
+
+(defn- emit-datetime
+  "Takes a clj-time datetime object and returns a formatted string as 
+   date-time-no-ms"
+  [dtime]
+  (time/unparse (time/formatters :date-time-no-ms) dtime))
+
+(defn- emit-trackpoints
+  "Takes a sweatkit IMeasured object and a sport. Returns the data sexp
+   for data.xml's emit corresponding to a single sequence of Trackpoints.
+   The objective is to associate them to a single Track, thus producing a 
+   smaller XML file"
+  [m sport]
+  (let [tks (->> (for [met (sk/metrics m)]
+                   (sk/track m met))
+                 flatten
+                 (remove nil?)
+                 (group-by #(sk/inst %)))]
+    (for [[k pcoll] tks]
+      [:Trackpoint
+       [:Time (emit-datetime k)]
+       (remove
+        nil?
+        (for [pval pcoll :let [v (sk/value pval)]]
+          (condp = (sk/metric pval)
+            :hr       [:HeartRateBpm {:xsi:type "HeartRateInBeatsPerMinute_t"}
+                       [:Value v]]
+            :cadence  (if (= sport :running)
+                        [:Extensions [:TPX [:RunCadence v]]]
+                        [:Cadence v])
+            :power    [:Extensions [:TPX [:Watts v]]]
+            :speed    [:Extensions [:TPX [:Speed v]]]
+            :distance [:DistanceMeters v]
+            :position [:Position
+                       [:LatitudeDegrees (:lat v)]
+                       [:LongitudeDegrees (:lng v)]]
+            :altitude [:AltitudeMeters v]
+            nil)))])))
+
+
+(defn- emit-segment
+  "Takes a sweatkit segment and returns the data sexp for data.xml's emit"
+  [s]
+  [:Lap {:StartTime (emit-datetime (sk/dtstart s))}
+   (when-let [secs (sk/duration s)] [:TotalTimeSeconds secs]) 
+   (when-let [dist (sk/distance s :total)] [:DistanceMeters dist])
+   (when-let [spd (sk/speed s :max)] [:MaximumSpeed spd]) 
+   (when-let [cals (sk/calories s :total)] [:Calories cals]) 
+   (when-let [hr (sk/hr s :avg)]
+     [:AverageHeartRateBpm {:xsi:type "HeartRateInBeatsPerMinute_t"} 
+      [:Value hr]])
+   (when-let [hr (sk/hr s :max)]
+     [:MaximumHeartRateBpm {:xsi:type "HeartRateInBeatsPerMinute_t"}
+      [:Value hr]])
+   [:Intensity (if (:active s) "Active" "Resting")] 
+   (when-let [trig (key-name (:trigger s) lap-triggers)]
+     [:TriggerMethod trig])
+   (when-let [notes (some-> s :annotations :notes)]
+     [:Notes notes])
+   (when-let [cad (sk/cadence s :avg)]
+     (when (= :cycling (:sport s))
+       [:Cadence cad]))
+   (let [ext
+         (remove
+          nil?
+          [(when-let [cad (sk/cadence s :avg)]
+             (when (= :running (:sport s))
+               [:AvgRunCadence {:xsi:type "CadenceValue_t"} cad]))
+           (when-let [cad (sk/cadence s :max)]
+             (condp = (:sport s)
+               :running [:MaxRunCadence {:xsi:type "CadenceValue_t"} cad]
+               :cycling [:MaxBikeCadence {:xsi:type "CadenceValue_t"} cad]
+               nil))
+           (when-let [pow (sk/power s :max)]
+             [:MaxWatts pow])
+           (when-let [pow (sk/power s :avg)]
+             [:AvgWatts pow])
+           (when-let [spd (sk/speed s :avg)]
+             [:AvgSpeed spd])
+           (when-let [steps (sk/steps s :total)]
+             [:Steps steps])])]
+     (when-not (empty? ext)
+       [:Extensions
+        [:LX {:xmlns "http://www.garmin.com/xmlschemas/ActivityExtension/v2"}
+         ext]]))
+   
+   (when-let [tpts (emit-trackpoints s (:sport s))] [:Track tpts])])
+
+(defn- emit-activity
+  "Takes a sweatkit activity and returns the data sexp for data.xml's emit"
+  [a]
+  (if (= 1 (count (sk/sports a)))
+    [:Activity {:Sport (key-name (first (sk/sports a)) sports)}
+     [:Id (time/unparse (time/formatters :date-time-no-ms)
+                        (:dtstart a))]
+     (for [s (:segments a)] (emit-segment s))
+     (when-let [notes (:annotations a)] [:Notes notes])]
+    [:MultiSportSession {}]))
 
 ;; =============================================================================
 ;; Public API
@@ -169,11 +280,33 @@
       {:activities (vec (for [act (dzip/xml-> z :Activities :Activity)] 
                           (parse-loc act)))})))
 
-;; (defn emit
-;;   "Takes a sweatkit db and returns the TCX data as a String or nil if the input
-;;    is not in a valid format"
-;;   [db]
-;;   (when (sk/db? db)
-;;     (for [a (:activities db)]
-      
-;;       )))
+(defn emit
+  "Takes a sweatkit db and returns the TCX data as a clojure.data.xml
+   Element or nil if is not in a valid format"
+  [db]
+  (when (sk/db? db)
+    (xml/sexp-as-element
+     [:TrainingCenterDatabase
+      {:xmlns "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+       :xmlns:xsi "http://www.w3.org/2001/XMLSchema-instance"
+       :xsi:schemaLocation "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2
+                            http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd"
+       :xmlns:ns2 "http://www.garmin.com/xmlschemas/UserProfile/v2"
+       :xmlns:ns5 "http://www.garmin.com/xmlschemas/ActivityGoals/v1"
+       :xmlns:ns4 "http://www.garmin.com/xmlschemas/ProfileExtension/v1"
+       :xmlns:tpx "http://www.garmin.com/xmlschemas/ActivityExtension/v2"}
+      (for [a (:activities db)]
+        [:Activities (emit-activity a)])
+      [:Author {:xsi:type "Application_t"}
+       [:Name "sweatkit"]
+       [:Build 
+        [:Version 
+         [:VersionMajor 0]
+         [:VersionMinor 0]
+         [:BuildMajor 0]
+         [:BuildMinor 0]]
+        [:Type "Alpha"]
+        [:Time (time/unparse (time/formatters :date-time-no-ms)
+                             (clj-time.core/now))]
+        [:Builder "sweatkit"]]
+       [:LangID "EN"]]])))
