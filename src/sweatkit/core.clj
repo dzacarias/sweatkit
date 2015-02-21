@@ -447,7 +447,7 @@
 
 (def sport-types
   "The set of supported sport types"
-  #{:running :cycling})
+  #{:running :cycling :swimming :transition})
 
 (defn measured?
   "Tests if x implements the IMeasured interface"
@@ -466,6 +466,11 @@
    instead of a single reading (e.g. :distance and :calories vs :speed)"
   [m]
   (contains? #{:distance :calories :steps} m))
+
+(defn multisport?
+  "Tests if x implements ISports and has more than one"
+  [x]
+  (and (satisfies? ISports x) (> (count (sports x)) 1)))
 
 (defn splits
   "Takes a measured object, an accumulator metric and a split value and

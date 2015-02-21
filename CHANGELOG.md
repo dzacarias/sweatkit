@@ -1,5 +1,10 @@
+## 0.1.4
+ * Emit TCX from a sweatkit db
+ * Support in sweatkit.core for multisport activities (transitions and sport type)
+ * Support for TCX's MultiSportSession
+ 
 ## 0.1.3
- * Moved to Clojure-only, due to lack of time to develop for both targets
+ * Moved to Clojure-only, due to lack of time to develop for both targets (CLJ + CLJS)
  
 ## 0.1.2
  * TCX parsing now accepts Document objects, instead of just strings

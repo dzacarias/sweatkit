@@ -1,7 +1,6 @@
 (ns sweatkit.core-test
   (:require [sweatkit.core :as sk]
             [sweatkit.formats.tcx :as tcx]
-            [sweatkit.test-util :as util]
             [clojure.test :as t :refer :all]  
             [clj-time.coerce :as tc]
             [clj-time.core :as time]))
@@ -131,7 +130,7 @@
                        (-> (sk/db sweat-db) :activities first)
                        :speed
                        1000)))))
-  (let [a (-> (util/read-file "test-resources/tcx/FitnessHistoryDetail.tcx")
+  (let [a (-> "test-resources/tcx/FitnessHistoryDetail.tcx"
               tcx/parse :activities first)]
     (testing "Total splits should be correct for given metric split value"
       (is (= 9 (count (sk/splits a :distance 1000))))

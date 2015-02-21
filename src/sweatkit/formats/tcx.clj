@@ -118,6 +118,33 @@
                       (merge {:sport (get sports (dzip/attr act :Sport))}
                              (parse-loc lap)))))}))
 
+(defmethod parse-loc :MultiSportSession [mss]
+  "Parses MultiSportSession elements, returning an Activity with three or
+    more segments, representing the list of sports"
+  (sk/activity
+   {:dtstart (xml1->inst mss :Id)
+    :annotations {:notes (xml1->inst mss :Notes)}
+    :segments (->> (cons 
+                    (for [fs (dzip/xml-> mss :FirstSport :Activity)
+                          lap (dzip/xml-> fs :Lap)]
+                      (sk/segment
+                       (merge {:sport
+                               (get sports
+                                    (dzip/attr fs :Sport))}
+                              (parse-loc lap))))
+                    (for [ns (dzip/xml-> mss :NextSport :Activity)
+                          :let [trans (dzip/xml-> mss :NextSport :Transition)]]
+                      [(when-not (empty? trans)
+                         (sk/segment
+                          (merge {:sport :transition} (parse-loc trans))))
+                       (for [lap (dzip/xml-> ns :Lap)]
+                         (sk/segment
+                          (merge {:sport (get sports (dzip/attr ns :Sport))}
+                                 (parse-loc lap))))]))
+                   flatten
+                   (remove nil?)
+                   vec)}))
+
 (defmethod parse-loc :Lap [lap]
   "Parses Lap elements, returning a map representing a sweatkit Segment"
   (let [tks (for [tpnt (dzip/xml-> lap :Track :Trackpoint)
@@ -159,6 +186,8 @@
                                           :ActivityTrackpointExtension
                                           :Speed))]
            {:speed spd})))
+
+
 
 ; ------------------------------------------------------------------------------
 ; Emit TCX
@@ -255,16 +284,62 @@
    
    (when-let [tpts (emit-trackpoints s (:sport s))] [:Track tpts])])
 
+(defn- split-by-sports
+  "Takes a multisport segment sequence and split it by sports"
+  [segments]
+  (loop [segs segments
+         sports-seq []
+         sport (-> segments first :sport)]
+    (let [[first-sport next-sports] (split-with #(= sport (:sport %)) segs)
+          new-sports-seq (conj sports-seq first-sport)]
+      (if (empty? next-sports)
+        new-sports-seq
+        (recur next-sports new-sports-seq (-> next-sports first :sport))))))
+
+(defn- emit-ms-activity
+  "Takes a sequence of segments (assumed to be from the same sport) and
+  outputs an Activity sexp for data.xml's emit"
+  [segs]
+  [:Activity {:Sport (key-name (:sport (first segs)) sports)}
+   [:Id (time/unparse (time/formatters :date-time-no-ms)
+                      (:dtstart (first segs)))]
+   (for [s segs] (emit-segment s))])
+
+(defn emit-next-sport
+  "Takes a vector with two grouped seqs of segments, each representing a
+   sport.
+    - If the first one is a transition and the second an activity, it outputs
+         [:NextSport [:T] [:A]]
+    - If the first one is an activity it outputs [:NextSport [:A]] and if
+      the second one is not nil, it also outputs [:NS [:A]] for that one"
+  [[f s :as nxt]]
+  (if (= :transition (:sport (first f)))
+    [:NextSport
+     [:Transition (emit-segment (first f))]
+     (emit-ms-activity s)]
+    (seq [[:NextSport
+           (emit-ms-activity f)]
+          (when-not (nil? s)
+            [:NextSport
+             (emit-ms-activity s)])])))
+
 (defn- emit-activity
   "Takes a sweatkit activity and returns the data sexp for data.xml's emit"
   [a]
-  (if (= 1 (count (sk/sports a)))
+  (if (sk/multisport? a)
+    (let [[first-sport & next-sports] (split-by-sports (:segments a))]
+      [:MultiSportSession {}
+       [:Id (time/unparse (time/formatters :date-time-no-ms)
+                          (:dtstart a))]
+       [:FirstSport (emit-ms-activity first-sport)]
+       (->> (partition 2 2 [nil] next-sports)
+            (map emit-next-sport))
+       (when-let [notes (:annotations a)] [:Notes notes])])
     [:Activity {:Sport (key-name (first (sk/sports a)) sports)}
      [:Id (time/unparse (time/formatters :date-time-no-ms)
                         (:dtstart a))]
      (for [s (:segments a)] (emit-segment s))
-     (when-let [notes (:annotations a)] [:Notes notes])]
-    [:MultiSportSession {}]))
+     (when-let [notes (:annotations a)] [:Notes notes])]))
 
 ;; =============================================================================
 ;; Public API
@@ -277,8 +352,13 @@
   [tcx]
   (with-open [i (io/input-stream tcx)]
     (let [z (-> i xml/parse zip/xml-zip)]
-      {:activities (vec (for [act (dzip/xml-> z :Activities :Activity)] 
-                          (parse-loc act)))})))
+      {:activities (vec
+                    (flatten
+                     (cons
+                      (for [mss (dzip/xml-> z :Activities :MultiSportSession)]
+                        (parse-loc mss))
+                      (for [act (dzip/xml-> z :Activities :Activity)] 
+                        (parse-loc act)))))})))
 
 (defn emit
   "Takes a sweatkit db and returns the TCX data as a clojure.data.xml
