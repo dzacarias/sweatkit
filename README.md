@@ -29,7 +29,7 @@ The library is motivated by the need to get the same kind of information from th
 Using [Leiningen](http://leiningen.org), add this to your project's `:dependencies`:
 
 ```clojure
-[sweatkit "0.1.3"]
+[sweatkit "0.1.4"]
 ```
 
 ### Some examples
@@ -166,11 +166,9 @@ Sequential collections containing IMeasured or IPointValue objects are extended 
 
 To give you an idea of where we're headed, here's a list of features that we'd like to add over time:
 
-- TCX format emitting
-- Support for workout plans and courses
+- Support for workout plans 
 - Performance Analysis and Projections
 - Distance & Altitude calculations from geo tracks
-- More sports types (testing & possible adaptations)
 
 ## License
 
